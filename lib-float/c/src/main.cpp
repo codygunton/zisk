@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 #ifdef ZISK_GCC
-#define TARGET_ADDRESS ((void *)0xa0000000)
+#define TARGET_ADDRESS ((void *)0x1F000000)
 #define MAP_SIZE (256 * 1024 * 1024UL) // 256 MB
 #endif
 
