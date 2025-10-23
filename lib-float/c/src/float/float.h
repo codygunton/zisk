@@ -10,11 +10,13 @@ extern "C" {
 #define uint64_t unsigned long long
 
 // System address where the floating-point registers are mapped
-#define SYS_ADDR 0x1F000000
+// Placed at 2MB to provide space for test code while staying well within 512MB limit
+// Must match FLOAT_REGISTER_BASE in Rust circuit constants
+#define SYS_ADDR 0x00200000
 #define REG_FIRST SYS_ADDR
-#define FREG_FIRST (SYS_ADDR + 0x1000)
+#define FREG_FIRST SYS_ADDR  // Float register base (was SYS_ADDR + 0x1000, now directly at SYS_ADDR)
 #define FREG_F0 FREG_FIRST
-#define FREG_INST (FREG_FIRST + 33 * 8) // Floating-point instruction register (finst)
+#define FREG_INST (FREG_FIRST + 33 * 8) // Floating-point instruction register (finst), should be 0x00200108
 #define FREG_X0 (FREG_FIRST + 35 * 8) // Integer register backup for floating-point instructions (fX0)
 #define CSR_ADDR (SYS_ADDR + 0x8000)
 #define FREG_CSR (CSR_ADDR + 3 * 8)
