@@ -61,7 +61,7 @@ MSB                                                         LSB
   Value = (-1)^sign × 1.fraction × 2^(exponent - 127)     ~7 decimal digits
 */
   
-#define F32_SIGN_BIT_MASK  0xFFFFFFFF80000000
+#define F32_SIGN_BIT_MASK  0x80000000
 #define F32_EXPONENT_MASK  0x7F800000
 #define F32_MANTISSA_MASK  0x007FFFFF
 #define F32_QUIET_NAN_MASK 0x00400000
@@ -89,26 +89,27 @@ MSB                                                         LSB
 #define F32_NEGATE(x) ( (x) ^ F32_SIGN_BIT_MASK )
 
 // Macro functions for extracting exponent, mantissa and checking for corner cases
-#define F32_EXPONENT(a) ( ((a) & F32_EXPONENT_MASK) >> 23 )
-#define F32_MANTISSA(a) ( (a) & F32_MANTISSA_MASK )
+// Cast to uint32_t to ensure we only look at lower 32 bits (ignore garbage in upper 32 bits of uint64_t storage)
+#define F32_EXPONENT(a) ( (((uint32_t)(a)) & F32_EXPONENT_MASK) >> 23 )
+#define F32_MANTISSA(a) ( ((uint32_t)(a)) & F32_MANTISSA_MASK )
 
-#define F32_IS_POSITIVE(a) ( ((a) & F32_SIGN_BIT_MASK) == 0 )
-#define F32_IS_NEGATIVE(a) ( ((a) & F32_SIGN_BIT_MASK) != 0 )
+#define F32_IS_POSITIVE(a) ( (((uint32_t)(a)) & F32_SIGN_BIT_MASK) == 0 )
+#define F32_IS_NEGATIVE(a) ( (((uint32_t)(a)) & F32_SIGN_BIT_MASK) != 0 )
 
-#define F32_IS_ANY_INFINITY(a) ( (((a) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && (((a) & F32_MANTISSA_MASK) == 0) )
+#define F32_IS_ANY_INFINITY(a) ( ((((uint32_t)(a)) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && ((((uint32_t)(a)) & F32_MANTISSA_MASK) == 0) )
 #define F32_IS_PLUS_INFINITY(a) ( F32_IS_ANY_INFINITY(a) && F32_IS_POSITIVE(a) )
 #define F32_IS_MINUS_INFINITY(a) ( F32_IS_ANY_INFINITY(a) && F32_IS_NEGATIVE(a) )
 
-#define F32_IS_ANY_NAN(a) ( (((a) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && (((a) & F32_MANTISSA_MASK) != 0) )
-#define F32_IS_QUIET_NAN(a) ( (((a) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && (((a) & F32_QUIET_NAN_MASK) != 0) )
-#define F32_IS_SIGNALING_NAN(a) ( (((a) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && (((a) & F32_MANTISSA_MASK) != 0) && (((a) & F32_QUIET_NAN_MASK) == 0) )
+#define F32_IS_ANY_NAN(a) ( ((((uint32_t)(a)) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && ((((uint32_t)(a)) & F32_MANTISSA_MASK) != 0) )
+#define F32_IS_QUIET_NAN(a) ( ((((uint32_t)(a)) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && ((((uint32_t)(a)) & F32_QUIET_NAN_MASK) != 0) )
+#define F32_IS_SIGNALING_NAN(a) ( ((((uint32_t)(a)) & F32_EXPONENT_MASK) == F32_EXPONENT_MASK) && ((((uint32_t)(a)) & F32_MANTISSA_MASK) != 0) && ((((uint32_t)(a)) & F32_QUIET_NAN_MASK) == 0) )
 
-#define F32_IS_ANY_ZERO(a) ( (((a) & F32_EXPONENT_MASK) == 0) && (((a) & F32_MANTISSA_MASK) == 0) )
+#define F32_IS_ANY_ZERO(a) ( ((((uint32_t)(a)) & F32_EXPONENT_MASK) == 0) && ((((uint32_t)(a)) & F32_MANTISSA_MASK) == 0) )
 #define F32_IS_PLUS_ZERO(a) ( F32_IS_ANY_ZERO(a) && F32_IS_POSITIVE(a) )
 #define F32_IS_MINUS_ZERO(a) ( F32_IS_ANY_ZERO(a) && F32_IS_NEGATIVE(a) )
 
-#define F32_IS_NORMAL(a) ( ((a) & F32_EXPONENT_MASK) != 0 && ((a) & F32_EXPONENT_MASK) != F32_EXPONENT_MASK )
-#define F32_IS_SUBNORMAL(a) ( ((a) & F32_EXPONENT_MASK) == 0 && ((a) & F32_MANTISSA_MASK) != 0 )
+#define F32_IS_NORMAL(a) ( (((uint32_t)(a)) & F32_EXPONENT_MASK) != 0 && (((uint32_t)(a)) & F32_EXPONENT_MASK) != F32_EXPONENT_MASK )
+#define F32_IS_SUBNORMAL(a) ( (((uint32_t)(a)) & F32_EXPONENT_MASK) == 0 && (((uint32_t)(a)) & F32_MANTISSA_MASK) != 0 )
 
 // Macro functions for extracting exponent, mantissa and checking for corner cases
 #define F64_EXPONENT(a) ( ((a) & F64_EXPONENT_MASK) >> 52 )
@@ -139,3 +140,4 @@ void _zisk_float (void);
 #endif
 
 #endif
+
