@@ -2586,6 +2586,12 @@ void _zisk_float (void)
 
     // Update flags: copy flags from the library state register to fcsr
     fcsr = (fcsr & ~0x1F) | (softfloat_exceptionFlags & 0x1F);
+
+    // Return using custom FLOAT_RETURN instruction (opcode 0x0B, funct3 = 0b110)
+    // This instruction will restore caller-saved registers and handle integer results
+    // Format: 0b0000000_00000_00000_110_00000_0001011 = 0x0000600B
+    __asm__ volatile(".word 0x0000600B");  // FLOAT_RETURN instruction
+    __builtin_unreachable();  // Tell compiler execution doesn't continue past FLOAT_RETURN
 }
 
 void set_rounding_mode (uint64_t rm)
