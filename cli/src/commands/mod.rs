@@ -12,6 +12,9 @@ mod server;
 mod stats;
 mod verify_constraints;
 mod verify_stark;
+mod zksyncos_common;
+mod zksyncos_prove;
+mod zksyncos_run;
 
 pub use build::*;
 pub use check_setup::*;
@@ -27,3 +30,6 @@ pub use server::*;
 pub use stats::*;
 pub use verify_constraints::*;
 pub use verify_stark::*;
+pub use zksyncos_common::*;
+pub use zksyncos_prove::*;
+pub use zksyncos_run::*;

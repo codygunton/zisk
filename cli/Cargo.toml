@@ -45,6 +45,7 @@ zisk-sdk = { workspace = true }
 zstd = { workspace = true }
 bytemuck = { workspace = true }
 clap = { workspace = true }
+hex = "0.4"
 dirs = "6"
 rand = "0.9"
 target-lexicon = "0.13"
