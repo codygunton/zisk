@@ -94,11 +94,11 @@ sudo -E HOME=/home/cody ./target/release/cargo-zisk prove -e  zisk-testvectors/p
   zisk-testvectors programs with actual inputs
 
   The working command:
-sudo -E HOME=/home/cody ./target/release/cargo-zisk prove \
+sudo -E home=/home/cody ./target/release/cargo-zisk prove \
     -e zisk-testvectors/pessimistic-proof/elf/pp-keccakf.elf \
     -i zisk-testvectors/pessimistic-proof/inputs/pp_input_1_1.bin \
     --witness-lib ./target/release/libzisk_witness.so \
-    --proving-key ./provingKey \
+    --proving-key ./provingkey \
     -t 4 -v
 
   To avoid needing sudo every time, add to /etc/security/limits.conf:
@@ -116,47 +116,53 @@ So the final working command (since I have upped my limits) is
 
 ---
 
-## Quick Reference: GPU Build & Run
+## Quick Reference: GPU Build & Run (From Scratch)
 
-This section summarizes the complete process for building and running Zisk with GPU support.
+Complete, reproducible steps for building and running Zisk with GPU support on Arch Linux.
 
-### Prerequisites (one-time setup)
+### System Requirements
+
+- NVIDIA GPU with CUDA support
+- CUDA toolkit installed (tested with CUDA 12.9 at `/opt/cuda`)
+- GCC 13 (GCC 15 has C++23 conflicts with CUDA)
+- Rust toolchain
+- `make`, `git`, `curl`
+
+### Step 1: System Dependencies (one-time)
 
 ```bash
-# 1. Symlink CUDA (if not already at /usr/local/cuda)
-sudo ln -s /opt/cuda /usr/local/cuda
+# Install GCC 13 (if not already installed)
+# On Arch Linux, gcc13 is available in AUR or community repos
 
-# 2. Install Intel OpenMP (required for proofman)
+# Install Intel OneAPI OpenMP (required for proofman)
+# Tested with: intel-oneapi-openmp 2025.0.4-1
 sudo pacman -S intel-oneapi-openmp
 
-# 3. Configure memory locking (add to /etc/security/limits.conf)
-#    Replace 'yourusername' with your actual username
-echo "yourusername hard memlock <limit in KB>" | sudo tee -a /etc/security/limits.conf
-echo "yourusername soft memlock <limit in KB>" | sudo tee -a /etc/security/limits.conf
-# Then log out and back in (or reboot) for limits to take effect
+# Symlink CUDA if not at /usr/local/cuda
+sudo ln -s /opt/cuda /usr/local/cuda
+
+# Configure memory locking for GPU proving
+# Add these lines to /etc/security/limits.conf (replace 'yourusername'):
+#   yourusername hard memlock unlimited
+#   yourusername soft memlock unlimited
+# Then log out and back in for changes to take effect
 ```
 
-### Clean Environment
-
-Run these commands when switching versions or if you encounter cache-related errors:
+### Step 2: Clone and Setup
 
 ```bash
-# Clean Zisk cache, ASM build artifacts, proofman build artifacts
-rm -rf ~/.zisk/cache/*
-rm -rf ~/.zisk/zisk/emulator-asm/build
-rm -rf ~/.cargo/git/checkouts/pil2-proofman-*
+# Clone the repository
+git clone https://github.com/0xPolygonHermez/zisk.git
+cd zisk
 
-### Build
+# Create ~/.zisk directory structure
+mkdir -p ~/.zisk/cache
 
-```bash
-# Build with GPU support (requires GCC < 15 due to CUDA/C++23 conflicts)
-MAKEFLAGS="CXX=/usr/bin/g++-13" \
-LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
-PROOFMAN_HOST_COMPILER_BIN=/usr/bin/g++-13 \
-cargo build --release --features gpu
+# Symlink zisk repo for emulator-asm builds
+ln -sf "$(pwd)" ~/.zisk/zisk
 ```
 
-### Download Proving Key
+### Step 3: Download Proving Key
 
 ```bash
 curl -L -o zisk-provingkey.tar.gz \
@@ -164,24 +170,48 @@ curl -L -o zisk-provingkey.tar.gz \
 tar -xf zisk-provingkey.tar.gz -C .
 ```
 
-### ROM Setup (required for each new ELF)
+### Step 4: Build
+
+```bash
+# Build with GPU support (requires GCC 13 due to CUDA/C++23 conflicts)
+MAKEFLAGS="CXX=/usr/bin/g++-13" \
+LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
+PROOFMAN_HOST_COMPILER_BIN=/usr/bin/g++-13 \
+cargo build --release --features gpu
+```
+
+### Step 5: ROM Setup (required for each ELF)
 
 ```bash
 ./target/release/cargo-zisk rom-setup \
-    --elf <path-to-elf> \
+    --elf zisk-testvectors/pessimistic-proof/elf/pp-keccakf.elf \
     --proving-key ./provingKey \
     -v
 ```
 
-### Run Proving
+### Step 6: Run Proving
 
 ```bash
-./target/release/cargo-zisk prove \
-    -e <path-to-elf> \
-    -i <path-to-input> \
+sudo -E HOME=/home/cody ./target/release/cargo-zisk prove \
+    -e zisk-testvectors/pessimistic-proof/elf/pp-keccakf.elf \
+    -i zisk-testvectors/pessimistic-proof/inputs/pp_input_1_1.bin \
     --witness-lib ./target/release/libzisk_witness.so \
     --proving-key ./provingKey \
     -t 4 -v
+```
+
+Note: If you've configured memory locking in `/etc/security/limits.conf`, you can omit `sudo -E HOME=/home/cody`.
+
+### Clean Environment (when switching versions)
+
+```bash
+# Clean all cached/built artifacts
+rm -rf ~/.zisk/cache/*
+rm -rf ~/.zisk/zisk/emulator-asm/build
+rm -rf ~/.cargo/git/checkouts/pil2-proofman-*
+
+# Optional: full cargo clean
+cargo clean
 ```
 
 ### Troubleshooting
@@ -189,7 +219,8 @@ tar -xf zisk-provingkey.tar.gz -C .
 | Error | Solution |
 |-------|----------|
 | `Path does not exist: "...cache/...-mt.bin"` | Run `rom-setup` for the ELF, or clean cache and retry |
+| `Failed to run make clean: No such file or directory` | Create symlink: `ln -sf $(pwd) ~/.zisk/zisk` |
 | Memory locking errors / need sudo | Configure `/etc/security/limits.conf` as shown above |
 | GCC 15 / `__is_pointer` errors | Use `PROOFMAN_HOST_COMPILER_BIN=/usr/bin/g++-13` |
-| Stale GPU libraries | Delete `~/.cargo/git/checkouts/pil2-proofman-*/*/pil2-stark/lib-gpu` |
+| Stale GPU libraries | Run: `rm -rf ~/.cargo/git/checkouts/pil2-proofman-*` |
 
