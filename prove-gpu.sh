@@ -6,4 +6,4 @@
     --witness-lib ./target/release/libzisk_witness.so \
     --proving-key ./provingKey \
     -t 4 \
-    -v
+    -vvv
