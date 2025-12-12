@@ -332,7 +332,10 @@ impl Mem {
                 _ => panic!("Mem::read() invalid width={width}"),
             };
 
-            //println!("Mem::read() addr={:x} width={} value={:x}={}", addr, width, value, value);
+            // Debug CSR 0x7c0 (ORACLE_IO) reads - address 0xa000be00
+            if addr == 0xa000be00 {
+                println!("CSR 0x7c0 READ: addr={:x} width={} value={:x}", addr, width, value);
+            }
             return value;
         }
 
@@ -556,6 +559,11 @@ impl Mem {
         // Log to console bytes written to UART address
         if (addr == UART_ADDR) && (width == 1) {
             print!("{}", String::from(val as u8 as char));
+        }
+
+        // Debug CSR 0x7c0 (ORACLE_IO) writes - address 0xa000be00
+        if addr == 0xa000be00 {
+            println!("CSR 0x7c0 WRITE: addr={:x} width={} value={:x}", addr, width, val);
         }
     }
 

@@ -1615,7 +1615,7 @@ impl<'a> Emu<'a> {
         while !self.ctx.inst_ctx.end {
             if options.verbose {
                 println!(
-                    "Emu::run() step={} ctx.pc={}",
+                    "Emu::run() step={} ctx.pc={:#x}",
                     self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
                 );
             }
