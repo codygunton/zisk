@@ -31,9 +31,7 @@ fi
 
 riscv64-elf-objdump -d zksync-os/zksync_os/zksync_os_for_zisk.elf > zisk.dump
 
-while read addr; do
-    [ "$addr" = "EOF" ] && continue
-    # 0x8006e330 -> 000000008006e330
-    pattern=$(printf "%016x" "$addr")
-    grep "$pattern" zisk.dump
-done < jumps
+# Load dump labels into awk hash, then lookup each jump (single pass through dump)
+awk 'NR==FNR && /^[0-9a-f]+ </ { labels[$1]=$0; next }
+     NR!=FNR && !/^EOF$/ { a=sprintf("%016x",strtonum($1)); if(a in labels) print labels[a] }' \
+    zisk.dump jumps
