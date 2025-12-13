@@ -160,3 +160,70 @@
   Your ELF has a .heap section of 461MB (0x1b800000 bytes) defined as SHT_NOBITS (BSS-like). Zisk creates a zero-filled vector and then generates ~57 million Zisk instructions to store all those zeros in memory.
 
   The huge heap comes from zksync-os linker script, not Zisk itself. Check zksync-os/zksync_os/src/lds/memory-zisk.x or similar.
+
+
+
+> Can you tell from this why we need to incrase the ROM size so much?
+
+
+Memory sections:
+  0 .text.dummy   00000000  0000000080000000  0000000080000000  00001000  2**0
+  1 .text         000c0288  0000000080000000  0000000080000000  00001000  2**12
+  2 .stack        01000000  00000000a0000000  00000000a0000000  000c1288  2**12
+  3 .rodata       00032af0  00000000800c02a0  00000000800c02a0  000c12a0  2**5
+  4 .note.gnu.build-id 00000024  00000000800f2d90  00000000800f2d90  000f3d90  2**2
+  5 .data         00000000  00000000a1000000  00000000a1000000  00201000  2**12
+  6 .bss          00000220  00000000a1000000  00000000a1000000  00200000  2**12
+  7 .heap         1b800000  00000000a1200000  00000000a1200000  00200000  2**21
+  8 .eh_frame     0000002c  0000000000000000  0000000000000000  00201000  2**3
+  9 .comment      000000e7  0000000000000000  0000000000000000  0020102c  2**0
+
+● Yes! Look at the .heap section:
+
+  .heap  1b800000  (461 MB)
+
+  The .heap is 0x1b800000 = 461 MB and it's SHT_NOBITS (like BSS), so Zisk generates instructions to zero-initialize it:
+
+  461 MB / 8 bytes per store = ~57.6 million instructions
+
+  That's where ~60M instructions come from - almost entirely from zeroing the 461MB heap.
+
+
+
+
+● Airbender doesn't have this problem because it's architecturally different:
+
+  Airbender: Direct RISC-V simulator
+  - Loads the binary into memory
+  - Allocates heap/stack as memory regions
+  - Memory starts as zero (or undefined) - no explicit initialization needed
+  - Just executes RISC-V instructions directly
+
+  Zisk: RISC-V → Zisk transpiler
+  - Converts RISC-V ELF to Zisk ROM
+  - For NOBITS sections (heap, stack, bss) with WRITE flag, it generates explicit copyb instructions to zero-initialize every 8 bytes
+  - This is what causes the instruction explosion
+
+  The issue is Zisk's elf_extraction.rs treating NOBITS sections as data that needs initialization code, rather than just reserving address space.
+
+  Potential fixes in Zisk (not your code):
+  1. Skip NOBITS sections entirely (they're uninitialized by definition)
+  2. Or only initialize small NOBITS sections (e.g., < 1MB)
+
+  Your workaround: Strip .heap and .stack from the ELF before passing to Zisk, which you're already doing.
+
+
+● Good question. Yes, it works because:
+
+  1. Stripping sections from ELF only removes metadata - it doesn't change the compiled code or memory addresses
+  2. The code still references those addresses - the linker script baked in:
+    - Stack at 0xa0000000
+    - Heap at higher addresses in RAM
+  3. Zisk's emulator has RAM mapped at 0xa0000000 - when the program accesses those addresses, Zisk handles them
+  4. We're only skipping Zisk's ROM zero-initialization - the memory regions still exist and are accessible
+  5. In practice:
+    - Stack: written before read (push then pop), doesn't need pre-zeroing
+    - Heap: allocator (talc) manages it, initializes as needed
+    - BSS: we're NOT stripping .bss (only 544 bytes), so static variables are initialized
+
+  The only risk would be if code assumes uninitialized heap memory is zero. But that's generally not a safe assumption anyway.
