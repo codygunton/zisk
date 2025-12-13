@@ -29,7 +29,7 @@ if [ -n "$TAIL_N" ]; then
     tail -n "$TAIL_N" jumps > jumps.tmp && mv jumps.tmp jumps
 fi
 
-riscv64-elf-objdump -d zksync-os/zksync_os/zksync_os_for_zisk.elf > zisk.dump
+riscv64-elf-objdump -d zksync-os/zksync_os/zksync_os_zisk.elf > zisk.dump
 
 # Load dump labels into awk hash, then lookup each jump (single pass through dump)
 awk 'NR==FNR && /^[0-9a-f]+ </ { labels[$1]=$0; next }

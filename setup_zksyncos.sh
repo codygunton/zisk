@@ -6,16 +6,16 @@ set -e
 # Usage: ./setup_zksyncos.sh [BLOCK_NUMBER]
 #
 # Outputs:
-#   zksync-os/zksync_os/zksync_os_for_zisk.elf  - ELF for Zisk
-#   /tmp/inputs/<BLOCK>_witness                  - Witness file
+#   zksync-os/zksync_os/zksync_os_zisk.elf  - ELF for Zisk
+#   /tmp/inputs/<BLOCK>_witness              - Witness file
 
 ZISK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BLOCK_NUMBER="${1:-22244135}"
 ZKSYNCOS_DIR="$ZISK_DIR/zksync-os/zksync_os"
-OUTPUT_ELF="$ZKSYNCOS_DIR/zksync_os_for_zisk.elf"
+OUTPUT_ELF="$ZKSYNCOS_DIR/zksync_os_zisk.elf"
 
 # Build zksync-os for Zisk
-"$ZKSYNCOS_DIR/build.sh" zisk
+"$ZKSYNCOS_DIR/build.sh" --machine zisk
 
 # ROM setup
 echo ""

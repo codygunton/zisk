@@ -11,6 +11,6 @@ LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
     cargo build --bin ziskemu --release
 
 ./target/release/ziskemu \
-    -e zksync-os/zksync_os/zksync_os_for_zisk.elf \
+    -e zksync-os/zksync_os/zksync_os_zisk.elf \
     -i "$INPUTS_BIN" \
     -v
