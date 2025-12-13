@@ -78,3 +78,85 @@
   2. Or copy the witness library to ~/.zisk/bin/libzisk_witness.so
   3. Then run: cargo-zisk zk-sync-os-run -e <elf> -w <witness> -k <proving-key> -l
 
+
+
+● The BIOS is initializing memory - specifically zeroing a massive heap:
+
+  .heap  0x1b800000 (461MB) at 0xa1200000
+
+  It's zeroing 461MB one 8-byte word at a time = ~57 million store operations.
+
+  Current progress:
+  - Current PC: 0x0cb50fcc (213M)
+  - Max BIOS PC: 0x0e41a9cc (239M)
+  - ~89% through BIOS init
+
+  The BIOS alone requires ~60 million Zisk instructions before the actual program even starts. This is a consequence of the 64-bit build with its large memory regions.
+
+  Options:
+  1. Wait - it's almost done with BIOS, but then the actual program runs
+  2. Reduce heap size in the linker script (zksync-os/zksync_os/src/lds/memory-zisk.x)
+  3. Use 32-bit airbender build - much smaller memory footprint
+
+  The 64-bit build is fundamentally very slow for Zisk due to the instruction expansion and large memory initialization.
+
+> /cody:QO is running… where is this zero-initialization defined? in zisk? zksyncos? show me the code
+
+● Search(pattern: "Init Data|zero.*init|bss.*init|heap.*init", path: "core/src", output_mode: "content")
+  ⎿  Found 9 lines (ctrl+o to expand)
+
+● Read(core/src/riscv2zisk_context.rs)
+  ⎿  Read 150 lines
+
+● Now let me find where this function is called from - specifically what data is being initialized:
+
+● Search(pattern: "add_zisk_init_data", path: "core/src", output_mode: "content")
+  ⎿  Found 6 lines (ctrl+o to expand)
+
+● Read(core/src/elf2rom.rs)
+  ⎿  Read 40 lines
+
+● Now let me check what sections are being extracted from the ELF:
+
+● Read(core/src/elf_extraction.rs)
+  ⎿  Read 50 lines
+
+● The zero-initialization is defined in Zisk (/home/cody/zisk/core/src):
+
+  Where the initialization happens:
+
+  1. ELF Section Extraction (elf_extraction.rs:89-95)
+
+  } else if sh.sh_type == SHT_NOBITS {
+      // BSS sections - uninitialized data, should be zero-filled
+      // Create a zero-filled vector of the appropriate size
+      let size = sh.sh_size as usize;
+      let aligned_size = (size + 3) & !3;
+      vec![0u8; aligned_size]  // <-- Creates zeros for BSS/.heap sections
+  }
+
+  2. ROM Generation (elf2rom.rs:35-37)
+
+  // 2. Add read-write data sections (will be copied to RAM)
+  for section in &payload.rw {
+      add_zisk_init_data(&mut rom, section.addr, &section.data, true);
+  }
+
+  3. Instruction Generation (riscv2zisk_context.rs:1701-1726)
+
+  pub fn add_zisk_init_data(rom: &mut ZiskRom, addr: u64, data: &[u8], force_aligned: bool) {
+      // Read 64-bit input data chunks and store them in rom
+      let nd = data.len() / 8;
+      for i in 0..nd {
+          let v = u64::from_le_bytes(data[i * 8..i * 8 + 8].try_into().unwrap());
+          // Creates one Zisk instruction per 8 bytes
+          zib.verbose(&format!("Init Data {o:08x}: {v:08x}"));
+          ...
+      }
+  }
+
+  The problem:
+
+  Your ELF has a .heap section of 461MB (0x1b800000 bytes) defined as SHT_NOBITS (BSS-like). Zisk creates a zero-filled vector and then generates ~57 million Zisk instructions to store all those zeros in memory.
+
+  The huge heap comes from zksync-os linker script, not Zisk itself. Check zksync-os/zksync_os/src/lds/memory-zisk.x or similar.
