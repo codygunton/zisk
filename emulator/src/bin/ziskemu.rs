@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::{fmt::Write, fs, process};
 use zisk_common::EmuTrace;
-use zisk_oracle::processors::ReplayOracle;
-use ziskemu::{create_replay_oracle_callback, EmuOptions, Emulator, ZiskEmulator};
+use zisk_oracle::processors::ProtocolAwareReplayOracle;
+use ziskemu::{create_protocol_replay_callback, EmuOptions, Emulator, ZiskEmulator};
 
 fn main() {
     // Create a emulator options instance based on arguments or default values
@@ -16,7 +16,7 @@ fn main() {
     }
 
     // Create oracle callback if oracle flag is set
-    // The oracle uses the inputs file as pre-recorded witness data
+    // Uses protocol-aware replay that understands the CSR 0x7c0 query protocol
     let oracle_callback = if options.oracle {
         if let Some(ref inputs_path) = options.inputs {
             if options.verbose {
@@ -34,9 +34,10 @@ fn main() {
                 );
             }
 
-            // Create replay oracle from the witness data
-            let replay_oracle = ReplayOracle::from_bytes(&witness_data);
-            Some(create_replay_oracle_callback(replay_oracle))
+            // Create protocol-aware replay oracle from the witness data
+            // This oracle injects response lengths per the CSR 0x7c0 protocol
+            let replay_oracle = ProtocolAwareReplayOracle::from_bytes(&witness_data);
+            Some(create_protocol_replay_callback(replay_oracle))
         } else {
             eprintln!("Warning: --oracle flag set but no inputs file provided");
             None
