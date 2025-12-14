@@ -100,6 +100,22 @@
 
 use crate::{M16, M3, M32, M8, REG_FIRST, REG_LAST};
 use core::fmt;
+use std::sync::{Arc, Mutex};
+
+/// CSR 0x7c0 (NON_DETERMINISM_CSR) memory-mapped address
+pub const ORACLE_CSR_ADDR: u64 = 0xa000be00;
+
+/// Oracle operation type for CSR 0x7c0 reads/writes.
+#[derive(Debug, Clone, Copy)]
+pub enum OracleOp {
+    /// Read from the oracle CSR.
+    Read,
+    /// Write to the oracle CSR.
+    Write(u64),
+}
+
+/// Callback for oracle CSR reads/writes.
+pub type OracleCallback = Arc<Mutex<dyn FnMut(OracleOp) -> u64 + Send>>;
 
 /// Fist input data memory address
 pub const INPUT_ADDR: u64 = 0x90000000;
@@ -197,18 +213,45 @@ impl MemSection {
 }
 
 /// Memory structure, containing several read sections and one single write section
-#[derive(Debug, Default)]
 pub struct Mem {
     pub read_sections: Vec<MemSection>,
     pub write_section: MemSection,
     pub free_input: u64,
+    /// Optional oracle callback for CSR 0x7c0 reads/writes.
+    pub oracle_callback: Option<OracleCallback>,
+}
+
+impl Default for Mem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Debug for Mem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Mem")
+            .field("read_sections", &self.read_sections)
+            .field("write_section", &self.write_section)
+            .field("free_input", &self.free_input)
+            .field("oracle_callback", &self.oracle_callback.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
 }
 
 impl Mem {
     /// Memory structure constructor
     pub fn new() -> Mem {
-        //println!("Mem::new()");
-        Mem { read_sections: Vec::new(), write_section: MemSection::new(), free_input: 0 }
+        Mem {
+            read_sections: Vec::new(),
+            write_section: MemSection::new(),
+            free_input: 0,
+            oracle_callback: None,
+        }
+    }
+
+    /// Set the oracle callback for CSR 0x7c0 reads/writes.
+    pub fn set_oracle_callback(&mut self, callback: OracleCallback) {
+        self.oracle_callback = Some(callback);
     }
 
     /// Adds a read section to the memory structure
@@ -332,9 +375,12 @@ impl Mem {
                 _ => panic!("Mem::read() invalid width={width}"),
             };
 
-            // Debug CSR 0x7c0 (ORACLE_IO) reads - address 0xa000be00
-            if addr == 0xa000be00 {
-                println!("CSR 0x7c0 READ: addr={:x} width={} value={:x}", addr, width, value);
+            // Handle CSR 0x7c0 (ORACLE_IO) reads via oracle callback
+            if addr == ORACLE_CSR_ADDR {
+                if let Some(callback) = &self.oracle_callback {
+                    let mut cb = callback.lock().expect("oracle lock poisoned");
+                    return cb(OracleOp::Read);
+                }
             }
             return value;
         }
@@ -561,9 +607,13 @@ impl Mem {
             print!("{}", String::from(val as u8 as char));
         }
 
-        // Debug CSR 0x7c0 (ORACLE_IO) writes - address 0xa000be00
-        if addr == 0xa000be00 {
-            println!("CSR 0x7c0 WRITE: addr={:x} width={} value={:x}", addr, width, val);
+        // Handle CSR 0x7c0 (ORACLE_IO) writes via oracle callback
+        if addr == ORACLE_CSR_ADDR {
+            if let Some(callback) = &self.oracle_callback {
+                let mut cb = callback.lock().expect("oracle lock poisoned");
+                cb(OracleOp::Write(val));
+                return;
+            }
         }
     }
 

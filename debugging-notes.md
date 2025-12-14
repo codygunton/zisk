@@ -216,6 +216,22 @@ Memory sections:
 ● Good question. Yes, it works because:
 
   1. Stripping sections from ELF only removes metadata - it doesn't change the compiled code or memory addresses
+
+
+  ● Good question. Yes, it works because:
+
+  1. Stripping sections from ELF only removes metadata - it doesn't change the compiled code or memory addresses
+  2. The code still references those addresses - the linker script baked in:
+    - Stack at 0xa0000000
+    - Heap at higher addresses in RAM
+  3. Zisk's emulator has RAM mapped at 0xa0000000 - when the program accesses those addresses, Zisk handles them
+  4. We're only skipping Zisk's ROM zero-initialization - the memory regions still exist and are accessible
+  5. In practice:
+    - Stack: written before read (push then pop), doesn't need pre-zeroing
+    - Heap: allocator (talc) manages it, initializes as needed
+    - BSS: we're NOT stripping .bss (only 544 bytes), so static variables are initialized
+
+  The only risk would be if code assumes uninitialized heap memory is zero. But that's generally not a safe assumption anyway.
   2. The code still references those addresses - the linker script baked in:
     - Stack at 0xa0000000
     - Heap at higher addresses in RAM

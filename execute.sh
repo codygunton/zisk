@@ -13,4 +13,5 @@ LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
 ./target/release/ziskemu \
     -e zksync-os/zksync_os/zksync_os_zisk.elf \
     -i "$INPUTS_BIN" \
+    --oracle \
     -v

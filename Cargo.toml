@@ -14,6 +14,7 @@ gha_pil2_compiler_branch = "tags/v0.8.0"
 members = [
     "cli",
     "core",
+    "oracle",
     "data-bus",
     "emulator",
     "executor",
@@ -95,6 +96,7 @@ ziskos = { path = "ziskos/entrypoint" }
 circuit = { path = "tools/circuit" }
 zisk-sdk = { path = "sdk" }
 zisk-build = { path = "ziskbuild" }
+zisk-oracle = { path = "oracle" }
 
 # Distributed crates
 zisk-distributed-common = { path = "distributed/crates/common" }

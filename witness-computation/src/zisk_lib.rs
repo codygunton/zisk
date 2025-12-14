@@ -222,6 +222,12 @@ impl ZiskWitnessLibrary<Goldilocks> for WitnessLib<Goldilocks> {
     fn execution_result(&self) -> Option<(ZiskExecutionResult, ExecutorStats)> {
         self.executor.as_ref().map(|executor| executor.get_execution_result())
     }
+
+    fn set_oracle_callback(&self, callback: zisk_core::OracleCallback) {
+        if let Some(executor) = &self.executor {
+            executor.set_oracle_callback(callback);
+        }
+    }
 }
 
 impl ZiskLib<Goldilocks> for WitnessLib<Goldilocks> {}

@@ -18,6 +18,7 @@ path = "src/bin/ziskemu.rs"
 [dependencies]
 zisk-common = { workspace = true }
 zisk-core = { workspace = true }
+zisk-oracle = { workspace = true }
 zisk-pil = { workspace = true }
 riscv = { workspace = true }
 data-bus = { workspace = true }

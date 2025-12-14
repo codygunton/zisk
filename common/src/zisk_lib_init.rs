@@ -3,6 +3,7 @@ use std::{path::PathBuf, time::Instant};
 use fields::PrimeField64;
 use proofman_common::VerboseMode;
 use witness::WitnessLibrary;
+use zisk_core::OracleCallback;
 
 use crate::{io::ZiskStdin, ExecutorStats};
 
@@ -31,6 +32,13 @@ pub struct Stats {
 pub trait ZiskWitnessLibrary<F: PrimeField64> {
     fn set_stdin(&self, stdin: ZiskStdin);
     fn execution_result(&self) -> Option<(ZiskExecutionResult, ExecutorStats)>;
+
+    /// Sets the oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
+    ///
+    /// This callback will be invoked during emulator execution when the program
+    /// reads from or writes to the oracle CSR address. Use `zisk_oracle::ZiskOracle`
+    /// with `ziskemu::create_oracle_callback` to create an appropriate callback.
+    fn set_oracle_callback(&self, callback: OracleCallback);
 }
 
 // SUpertrait for ZiskWitnessLibrary and WitnessLibrary

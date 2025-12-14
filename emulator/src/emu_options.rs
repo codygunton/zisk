@@ -85,6 +85,10 @@ pub struct EmuOptions {
     /// Requires options: -S -X
     #[clap(short = 'D', long, value_name = "TOP_ROI_DETAIL", default_value = "false")]
     pub top_roi_detail: bool,
+    /// Enable oracle support for CSR 0x7c0 queries (e.g., zksync-os block metadata).
+    /// When enabled, oracle queries are handled by the built-in oracle system.
+    #[clap(long, value_name = "ORACLE", default_value = "false")]
+    pub oracle: bool,
 }
 
 impl Default for EmuOptions {
@@ -112,6 +116,7 @@ impl Default for EmuOptions {
             top_roi: 10,
             top_roi_detail: false,
             legacy_stats: false,
+            oracle: false,
         }
     }
 }
@@ -139,6 +144,7 @@ impl fmt::Display for EmuOptions {
         writeln!(f, "TOP_ROI: {:?}", self.top_roi)?;
         writeln!(f, "ROI_CALLERS: {:?}", self.roi_callers)?;
         writeln!(f, "TOP_ROI_DETAIL: {:?}", self.top_roi_detail)?;
+        writeln!(f, "ORACLE: {:?}", self.oracle)?;
         Ok(())
     }
 }

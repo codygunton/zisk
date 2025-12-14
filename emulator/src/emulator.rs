@@ -26,13 +26,14 @@ use std::{
 };
 use sysinfo::System;
 use zisk_common::EmuTrace;
-use zisk_core::{Riscv2zisk, ZiskRom};
+use zisk_core::{OracleCallback, Riscv2zisk, ZiskRom};
 
 pub trait Emulator {
     fn emulate(
         &self,
         options: &EmuOptions,
         callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<u8>, ZiskEmulatorErr>;
 }
 use rayon::prelude::*;
@@ -58,7 +59,7 @@ impl ZiskEmulator {
         for file in files {
             // If file follows the riscof dut file name convention, then call process_elf_file()
             if file.contains("dut") && file.ends_with(".elf") {
-                Self::process_elf_file(file, inputs, options, None::<Box<dyn Fn(EmuTrace)>>)?;
+                Self::process_elf_file(file, inputs, options, None::<Box<dyn Fn(EmuTrace)>>, None)?;
             }
         }
 
@@ -71,6 +72,7 @@ impl ZiskEmulator {
         inputs: &[u8],
         options: &EmuOptions,
         callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<u8>, ZiskEmulatorErr> {
         if options.verbose {
             println!("process_elf_file() elf_file={elf_filename}");
@@ -84,7 +86,7 @@ impl ZiskEmulator {
         let zisk_rom = riscv2zisk.run().map_err(|err| ZiskEmulatorErr::Unknown(err.to_string()))?;
 
         // Process the Zisk rom with the provided inputs, according to the configured options
-        Self::process_rom(&zisk_rom, inputs, options, callback)
+        Self::process_rom(&zisk_rom, inputs, options, callback, oracle_callback)
     }
 
     // To be implemented
@@ -93,6 +95,7 @@ impl ZiskEmulator {
         inputs: &[u8],
         options: &EmuOptions,
         callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<u8>, ZiskEmulatorErr> {
         if options.verbose {
             println!("process_rom_file() rom_file={rom_filename}");
@@ -100,7 +103,7 @@ impl ZiskEmulator {
 
         // TODO: load from file
         let rom: ZiskRom = ZiskRom::default();
-        Self::process_rom(&rom, inputs, options, callback)
+        Self::process_rom(&rom, inputs, options, callback, oracle_callback)
     }
 
     /// Processes a Zisk rom with the provided inputs, according to the configured options
@@ -109,6 +112,7 @@ impl ZiskEmulator {
         inputs: &[u8],
         options: &EmuOptions,
         callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<u8>, ZiskEmulatorErr> {
         if options.verbose {
             println!("process_rom() rom size={} inputs size={}", rom.insts.len(), inputs.len());
@@ -120,8 +124,11 @@ impl ZiskEmulator {
         // Get the current time, to be used to calculate the metrics
         let start = Instant::now();
 
-        // Run the emulation, using the input and the options
-        emu.run(inputs.to_owned(), options, callback);
+        // Run the emulation with oracle callback support
+        // The oracle callback must be passed to run_with_oracle() because run() calls
+        // create_emu_context() which resets the memory and would overwrite any callback
+        // set beforehand.
+        emu.run_with_oracle(inputs.to_owned(), options, callback, oracle_callback);
 
         // Check that the emulation completed, either successfully or not, but it must reach the end
         // of the program
@@ -182,15 +189,37 @@ impl ZiskEmulator {
         options: &EmuOptions,
         num_threads: usize,
     ) -> Result<Vec<EmuTrace>, ZiskEmulatorErr> {
+        Self::compute_minimal_traces_with_oracle(rom, inputs, options, num_threads, None)
+    }
+
+    /// EXECUTE phase with optional oracle callback.
+    ///
+    /// This variant allows passing an oracle callback that will be set on the
+    /// emulator's memory before execution. The oracle handles CSR 0x7c0 reads/writes.
+    pub fn compute_minimal_traces_with_oracle(
+        rom: &ZiskRom,
+        inputs: &[u8],
+        options: &EmuOptions,
+        num_threads: usize,
+        oracle_callback: Option<OracleCallback>,
+    ) -> Result<Vec<EmuTrace>, ZiskEmulatorErr> {
         let mut minimal_traces = vec![Vec::new(); num_threads];
 
         minimal_traces.par_iter_mut().enumerate().for_each(|(thread_id, emu_trace)| {
             let par_emu_options =
                 ParEmuOptions::new(num_threads, thread_id, options.chunk_size.unwrap() as usize);
 
-            // Run the emulation
+            // Run the emulation with oracle callback support
+            // The oracle callback must be passed to par_run_with_oracle() because par_run()
+            // calls create_emu_context() which resets the memory and would overwrite any
+            // callback set beforehand.
             let mut emu = Emu::new(rom);
-            let result = emu.par_run(inputs.to_owned(), options, &par_emu_options);
+            let result = emu.par_run_with_oracle(
+                inputs.to_owned(),
+                options,
+                &par_emu_options,
+                oracle_callback.clone(),
+            );
 
             if !emu.terminated() {
                 panic!("Emulation did not complete");
@@ -286,6 +315,7 @@ impl Emulator for ZiskEmulator {
         &self,
         options: &EmuOptions,
         callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<u8>, ZiskEmulatorErr> {
         // Log this call
         if options.verbose {
@@ -328,7 +358,7 @@ impl Emulator for ZiskEmulator {
             }
 
             // Call process_rom_file()
-            Self::process_rom_file(rom_filename, &inputs, options, callback)
+            Self::process_rom_file(rom_filename, &inputs, options, callback, oracle_callback)
         }
         // Process the ELF file
         else {
@@ -346,7 +376,7 @@ impl Emulator for ZiskEmulator {
             }
             // If it is a file, call process_elf_file()
             else {
-                Self::process_elf_file(elf_filename, &inputs, options, callback)
+                Self::process_elf_file(elf_filename, &inputs, options, callback, oracle_callback)
             }
         }
     }

@@ -60,7 +60,7 @@ use zisk_common::ExecutorStatsEvent;
 use crossbeam::atomic::AtomicCell;
 
 use zisk_common::EmuTrace;
-use zisk_core::{ZiskRom, MAX_INPUT_SIZE};
+use zisk_core::{OracleCallback, ZiskRom, MAX_INPUT_SIZE};
 use ziskemu::{EmuOptions, ZiskEmulator};
 
 use crate::StaticSMBundle;
@@ -144,6 +144,9 @@ pub struct ZiskExecutor<F: PrimeField64> {
     asm_shmem_rh: Arc<Mutex<Option<PreloadedRH>>>,
 
     shmem_input_writer: [Arc<Mutex<Option<SharedMemoryWriter>>>; AsmServices::SERVICES.len()],
+
+    /// Optional oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
+    oracle_callback: Mutex<Option<OracleCallback>>,
 }
 
 impl<F: PrimeField64> ZiskExecutor<F> {
@@ -211,12 +214,22 @@ impl<F: PrimeField64> ZiskExecutor<F> {
             asm_shmem_mo: Arc::new(Mutex::new(asm_shmem_mo)),
             asm_shmem_rh: Arc::new(Mutex::new(None)),
             shmem_input_writer: std::array::from_fn(|_| Arc::new(Mutex::new(None))),
+            oracle_callback: Mutex::new(None),
         }
     }
 
     pub fn set_stdin(&self, stdin: ZiskStdin) {
         let mut guard = self.stdin.lock().unwrap();
         *guard = stdin;
+    }
+
+    /// Sets the oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
+    ///
+    /// This callback will be invoked during emulator execution when the program
+    /// reads from or writes to the oracle CSR address.
+    pub fn set_oracle_callback(&self, callback: OracleCallback) {
+        let mut guard = self.oracle_callback.lock().expect("oracle_callback lock poisoned");
+        *guard = Some(callback);
     }
 
     #[allow(clippy::type_complexity)]
@@ -532,11 +545,15 @@ impl<F: PrimeField64> ZiskExecutor<F> {
             ..EmuOptions::default()
         };
 
-        let min_traces = ZiskEmulator::compute_minimal_traces(
+        // Get oracle callback if set
+        let oracle_callback = self.oracle_callback.lock().expect("oracle_callback lock").clone();
+
+        let min_traces = ZiskEmulator::compute_minimal_traces_with_oracle(
             &self.zisk_rom,
             &input_data,
             &emu_options,
             num_threads,
+            oracle_callback,
         )
         .expect("Error during emulator execution");
 

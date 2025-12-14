@@ -15,9 +15,9 @@ use data_bus::DataBusTrait;
 use zisk_common::{EmuTrace, EmuTraceStart};
 use zisk_core::zisk_ops::ZiskOp;
 use zisk_core::{
-    EmulationMode, InstContext, Mem, ZiskInst, ZiskOperationType, ZiskRom, FREG_F0, FREG_INST,
-    FREG_RA, FREG_X0, OUTPUT_ADDR, ROM_ENTRY, SRC_C, SRC_IMM, SRC_IND, SRC_MEM, SRC_REG, SRC_STEP,
-    STORE_IND, STORE_MEM, STORE_NONE, STORE_REG,
+    EmulationMode, InstContext, Mem, OracleCallback, ZiskInst, ZiskOperationType, ZiskRom,
+    FREG_F0, FREG_INST, FREG_RA, FREG_X0, OUTPUT_ADDR, ROM_ENTRY, SRC_C, SRC_IMM, SRC_IND, SRC_MEM,
+    SRC_REG, SRC_STEP, STORE_IND, STORE_MEM, STORE_NONE, STORE_REG,
 };
 
 /// ZisK emulator structure, containing the ZisK rom, the list of ZisK operations, and the
@@ -1524,8 +1524,24 @@ impl<'a> Emu<'a> {
         options: &EmuOptions,
         callback: Option<impl Fn(EmuTrace)>,
     ) {
+        self.run_with_oracle(inputs, options, callback, None);
+    }
+
+    /// Run the whole program with optional oracle callback
+    pub fn run_with_oracle(
+        &mut self,
+        inputs: Vec<u8>,
+        options: &EmuOptions,
+        callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
+    ) {
         // Context, where the state of the execution is stored and modified at every execution step
         self.ctx = self.create_emu_context(inputs.clone());
+
+        // Set oracle callback after context creation (context creation resets memory)
+        if let Some(oracle_cb) = oracle_callback {
+            self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
+        }
 
         let mut elf = ElfSymbolReader::new();
         if options.read_symbols {
@@ -1702,8 +1718,24 @@ impl<'a> Emu<'a> {
         options: &EmuOptions,
         par_options: &ParEmuOptions,
     ) -> Vec<EmuTrace> {
+        self.par_run_with_oracle(inputs, options, par_options, None)
+    }
+
+    /// Run the program in parallel mode with optional oracle callback
+    pub fn par_run_with_oracle(
+        &mut self,
+        inputs: Vec<u8>,
+        options: &EmuOptions,
+        par_options: &ParEmuOptions,
+        oracle_callback: Option<OracleCallback>,
+    ) -> Vec<EmuTrace> {
         // Context, where the state of the execution is stored and modified at every execution step
         self.ctx = self.create_emu_context(inputs);
+
+        // Set oracle callback after context creation (context creation resets memory)
+        if let Some(oracle_cb) = oracle_callback {
+            self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
+        }
 
         // Init pc to the rom entry address
         self.ctx.trace.start_state.pc = ROM_ENTRY;

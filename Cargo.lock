@@ -614,6 +614,7 @@ dependencies = [
  "zisk-build",
  "zisk-common",
  "zisk-core",
+ "zisk-oracle",
  "zisk-pil",
  "zisk-sdk",
  "zstd",
@@ -5720,6 +5721,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zisk-oracle"
+version = "0.14.0"
+dependencies = [
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "zisk-pil"
 version = "0.14.0"
 dependencies = [
@@ -5819,6 +5827,7 @@ dependencies = [
  "vergen",
  "zisk-common",
  "zisk-core",
+ "zisk-oracle",
  "zisk-pil",
 ]
 
