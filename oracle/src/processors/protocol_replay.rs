@@ -20,17 +20,21 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-/// Query response sizes (in u32 words) for known query types
-const BLOCK_METADATA_RESPONSE_SIZE: u32 = 1048; // From BlockMetadataProcessor
-const UART_RESPONSE_SIZE: u32 = 0; // UART has no response
-const DISCONNECT_RESPONSE_SIZE: u32 = 0; // Disconnect has no response
-const NEXT_TX_SIZE_RESPONSE_SIZE: u32 = 1; // Returns 1 u32 (the tx size or 0)
-
-/// Query IDs
-const BLOCK_METADATA_QUERY_ID: u32 = 0x40070000;
+/// Query IDs from zksync-os/zk_ee/src/oracle/query_ids.rs
 const UART_QUERY_ID: u32 = 0xFFFFFFFF;
-const DISCONNECT_QUERY_ID: u32 = 0xFFFFFFFE;
-const NEXT_TX_SIZE_QUERY_ID: u32 = 0x40070001;
+const DISCONNECT_QUERY_ID: u32 = 0x40000000;
+const GENERIC_PREIMAGE_QUERY_ID: u32 = 0x40020000;
+const INITIAL_STORAGE_SLOT_QUERY_ID: u32 = 0x40030000;
+const NEXT_TX_SIZE_QUERY_ID: u32 = 0x40060000;
+const TX_DATA_WORDS_QUERY_ID: u32 = 0x40060001;
+const TX_ENCODING_FORMAT_QUERY_ID: u32 = 0x40060002;
+const TX_FROM_QUERY_ID: u32 = 0x40060003;
+const BLOCK_METADATA_QUERY_ID: u32 = 0x40070000;
+const ZK_PROOF_DATA_INIT_QUERY_ID: u32 = 0x40070001;
+const DA_COMMITMENT_SCHEME_QUERY_ID: u32 = 0x40070002;
+
+/// Marker for variable-size queries where the length is read from the data buffer
+const VARIABLE_SIZE_MARKER: u32 = u32::MAX;
 
 /// State of the protocol state machine
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,10 +75,22 @@ impl ProtocolAwareReplayOracle {
     /// * `data` - The Vec<u32> of pre-recorded oracle response data (without lengths)
     pub fn new(data: Vec<u32>) -> Self {
         let mut query_sizes = HashMap::new();
-        query_sizes.insert(BLOCK_METADATA_QUERY_ID, BLOCK_METADATA_RESPONSE_SIZE);
-        query_sizes.insert(UART_QUERY_ID, UART_RESPONSE_SIZE);
-        query_sizes.insert(DISCONNECT_QUERY_ID, DISCONNECT_RESPONSE_SIZE);
-        query_sizes.insert(NEXT_TX_SIZE_QUERY_ID, NEXT_TX_SIZE_RESPONSE_SIZE);
+
+        // Fixed-size query responses (in u32 words)
+        query_sizes.insert(UART_QUERY_ID, 0); // UART has no response
+        query_sizes.insert(DISCONNECT_QUERY_ID, 0); // Disconnect has no response
+        query_sizes.insert(BLOCK_METADATA_QUERY_ID, 1048); // BlockMetadata response
+        query_sizes.insert(NEXT_TX_SIZE_QUERY_ID, 1); // Returns 1 u32 (tx size or 0)
+        query_sizes.insert(TX_ENCODING_FORMAT_QUERY_ID, 1); // Returns 1 u32
+        query_sizes.insert(DA_COMMITMENT_SCHEME_QUERY_ID, 1); // Returns 1 u32
+        query_sizes.insert(INITIAL_STORAGE_SLOT_QUERY_ID, 8); // U256 = 8 u32s
+        query_sizes.insert(TX_FROM_QUERY_ID, 5); // 20-byte address = 5 u32s
+
+        // Variable-size queries: the response length is read from the data buffer
+        // VARIABLE_SIZE_MARKER means "read the next word from data as the length"
+        query_sizes.insert(TX_DATA_WORDS_QUERY_ID, VARIABLE_SIZE_MARKER);
+        query_sizes.insert(GENERIC_PREIMAGE_QUERY_ID, VARIABLE_SIZE_MARKER);
+        query_sizes.insert(ZK_PROOF_DATA_INIT_QUERY_ID, VARIABLE_SIZE_MARKER);
 
         Self {
             data,
@@ -136,7 +152,7 @@ impl ProtocolAwareReplayOracle {
     /// Handle a read from CSR 0x7c0.
     ///
     /// Based on the protocol state:
-    /// - After query complete: returns the response length (injected)
+    /// - After query complete: returns the response length (injected or from data)
     /// - During response reading: returns data from the buffer
     pub fn read(&self) -> u32 {
         let mut state = self.state.lock().expect("state lock");
@@ -146,14 +162,27 @@ impl ProtocolAwareReplayOracle {
                 // First read after query - return response length
                 let response_size = self.query_sizes.get(&query_type).copied().unwrap_or(0);
 
-                if response_size == 0 {
+                if response_size == VARIABLE_SIZE_MARKER {
+                    // Variable-size query: read the length from the data buffer
+                    let pos = self.position.fetch_add(1, Ordering::SeqCst);
+                    let actual_size = if pos < self.data.len() { self.data[pos] } else { 0 };
+
+                    if actual_size == 0 {
+                        *state = ReplayState::Idle;
+                    } else {
+                        *state = ReplayState::ReadingResponse { remaining: actual_size };
+                    }
+
+                    actual_size
+                } else if response_size == 0 {
                     // No response data, go back to idle
                     *state = ReplayState::Idle;
+                    0
                 } else {
+                    // Fixed-size response
                     *state = ReplayState::ReadingResponse { remaining: response_size };
+                    response_size
                 }
-
-                response_size
             }
             ReplayState::ReadingResponse { remaining } => {
                 // Return next data word from buffer
