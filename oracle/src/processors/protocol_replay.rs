@@ -37,6 +37,9 @@ const DA_COMMITMENT_SCHEME_QUERY_ID: u32 = 0x40070002;
 const VARIABLE_SIZE_MARKER: u32 = u32::MAX;
 
 /// State of the protocol state machine
+///
+/// The zksync-os oracle protocol uses u32 values (RISC-V 32-bit target).
+/// Note: Data in inputs.bin may be serialized as 64-bit usize on host.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ReplayState {
     /// Waiting for query_type write
@@ -76,15 +79,23 @@ impl ProtocolAwareReplayOracle {
     pub fn new(data: Vec<u32>) -> Self {
         let mut query_sizes = HashMap::new();
 
-        // Fixed-size query responses (in u32 words)
+        // Fixed-size query responses (in usize count, where usize matches target architecture)
+        //
+        // The response_len represents the number of usize values the guest will read.
+        // On 32-bit RISC-V target, usize = u32. Each CSR read returns one u32.
+        // The guest will call csr_read_impl() response_len times.
+        //
+        // NOTE: The data format in inputs.bin should match the target's usize size.
+        // If inputs.bin was created for 32-bit target: response_len = number of u32 values
+        // If inputs.bin was created for 64-bit target: need conversion (not handled here)
         query_sizes.insert(UART_QUERY_ID, 0); // UART has no response
         query_sizes.insert(DISCONNECT_QUERY_ID, 0); // Disconnect has no response
-        query_sizes.insert(BLOCK_METADATA_QUERY_ID, 1048); // BlockMetadata response
-        query_sizes.insert(NEXT_TX_SIZE_QUERY_ID, 1); // Returns 1 u32 (tx size or 0)
-        query_sizes.insert(TX_ENCODING_FORMAT_QUERY_ID, 1); // Returns 1 u32
-        query_sizes.insert(DA_COMMITMENT_SCHEME_QUERY_ID, 1); // Returns 1 u32
-        query_sizes.insert(INITIAL_STORAGE_SLOT_QUERY_ID, 8); // U256 = 8 u32s
-        query_sizes.insert(TX_FROM_QUERY_ID, 5); // 20-byte address = 5 u32s
+        query_sizes.insert(BLOCK_METADATA_QUERY_ID, 2096); // 1048 usize (64-bit host) = 2096 u32
+        query_sizes.insert(NEXT_TX_SIZE_QUERY_ID, 2); // 1 usize (64-bit) = 2 u32
+        query_sizes.insert(TX_ENCODING_FORMAT_QUERY_ID, 2); // 1 usize (64-bit) = 2 u32
+        query_sizes.insert(DA_COMMITMENT_SCHEME_QUERY_ID, 2); // 1 usize (64-bit) = 2 u32
+        query_sizes.insert(INITIAL_STORAGE_SLOT_QUERY_ID, 8); // U256 = 32 bytes = 8 u32
+        query_sizes.insert(TX_FROM_QUERY_ID, 6); // B160 (20 bytes) = 3 u64 = 6 u32
 
         // Variable-size queries: the response length is read from the data buffer
         // VARIABLE_SIZE_MARKER means "read the next word from data as the length"
@@ -114,19 +125,26 @@ impl ProtocolAwareReplayOracle {
 
     /// Handle a write to CSR 0x7c0.
     ///
-    /// Updates the state machine based on the protocol:
-    /// - First write: query_type
-    /// - Second write: input_len
-    /// - Subsequent writes: input data
+    /// Protocol: write query_type, write input_len, write input_data[0..input_len]
+    ///
+    /// NOTE: The zisk emulator's `csrrw rd, csr, rs1` implementation always writes rs1 to the
+    /// CSR, even when rs1=x0 (used for read operations). This means every CSR read is followed
+    /// by a spurious write of 0. We detect and ignore these side-effect writes.
     pub fn write(&self, value: u32) {
         let mut state = self.state.lock().expect("state lock");
         *state = match *state {
             ReplayState::Idle => {
-                // First write is query_type
+                // A write of 0 in Idle state is likely the spurious CSR side-effect
+                // after a query that returned response_len=0. Ignore it.
+                // (0x00000000 is not a valid query type anyway)
+                if value == 0 {
+                    return;
+                }
+                eprintln!("[ORACLE] Query type: 0x{:08x}", value);
                 ReplayState::ReceivedQueryType { query_type: value }
             }
             ReplayState::ReceivedQueryType { query_type } => {
-                // Second write is input_len
+                eprintln!("[ORACLE] Query 0x{:08x} input_len={}", query_type, value);
                 if value == 0 {
                     ReplayState::QueryComplete { query_type }
                 } else {
@@ -134,7 +152,6 @@ impl ProtocolAwareReplayOracle {
                 }
             }
             ReplayState::ReceivingInput { query_type, input_len, received } => {
-                // Receiving input data words
                 let new_received = received + 1;
                 if new_received >= input_len {
                     ReplayState::QueryComplete { query_type }
@@ -142,8 +159,19 @@ impl ProtocolAwareReplayOracle {
                     ReplayState::ReceivingInput { query_type, input_len, received: new_received }
                 }
             }
-            _ => {
-                // Unexpected write - reset to idle and treat as new query
+            // CSR side-effect: csrrw always writes rs1 to CSR, even when reading (rs1=x0).
+            // After a READ from QueryComplete or ReadingResponse, we get a spurious write of 0.
+            // Ignore these and keep the current state.
+            ReplayState::QueryComplete { .. } if value == 0 => {
+                // Spurious write after read - ignore
+                return;
+            }
+            ReplayState::ReadingResponse { .. } if value == 0 => {
+                // Spurious write after read - ignore
+                return;
+            }
+            other => {
+                eprintln!("[ORACLE] Unexpected write 0x{:08x} in state {:?}", value, other);
                 ReplayState::ReceivedQueryType { query_type: value }
             }
         };
@@ -151,35 +179,36 @@ impl ProtocolAwareReplayOracle {
 
     /// Handle a read from CSR 0x7c0.
     ///
-    /// Based on the protocol state:
-    /// - After query complete: returns the response length (injected or from data)
-    /// - During response reading: returns data from the buffer
+    /// First read returns response_len, then response_data from buffer.
     pub fn read(&self) -> u32 {
         let mut state = self.state.lock().expect("state lock");
 
         match *state {
             ReplayState::QueryComplete { query_type } => {
                 // First read after query - return response length
-                let response_size = self.query_sizes.get(&query_type).copied().unwrap_or(0);
+                let response_size = self.query_sizes.get(&query_type).copied().unwrap_or_else(|| {
+                    eprintln!("[ORACLE] WARNING: Unknown query type 0x{:08x}, returning 0", query_type);
+                    0
+                });
 
                 if response_size == VARIABLE_SIZE_MARKER {
                     // Variable-size query: read the length from the data buffer
                     let pos = self.position.fetch_add(1, Ordering::SeqCst);
                     let actual_size = if pos < self.data.len() { self.data[pos] } else { 0 };
+                    eprintln!("[ORACLE] Query 0x{:08x} variable size -> {} words (pos={})", query_type, actual_size, pos);
 
                     if actual_size == 0 {
                         *state = ReplayState::Idle;
                     } else {
                         *state = ReplayState::ReadingResponse { remaining: actual_size };
                     }
-
                     actual_size
                 } else if response_size == 0 {
-                    // No response data, go back to idle
+                    eprintln!("[ORACLE] Query 0x{:08x} -> 0 words (no response)", query_type);
                     *state = ReplayState::Idle;
                     0
                 } else {
-                    // Fixed-size response
+                    eprintln!("[ORACLE] Query 0x{:08x} -> {} words", query_type, response_size);
                     *state = ReplayState::ReadingResponse { remaining: response_size };
                     response_size
                 }
@@ -191,6 +220,7 @@ impl ProtocolAwareReplayOracle {
 
                 let new_remaining = remaining.saturating_sub(1);
                 if new_remaining == 0 {
+                    eprintln!("[ORACLE] Response complete, next data pos={}", pos + 1);
                     *state = ReplayState::Idle;
                 } else {
                     *state = ReplayState::ReadingResponse { remaining: new_remaining };
@@ -199,7 +229,7 @@ impl ProtocolAwareReplayOracle {
                 value
             }
             _ => {
-                // Unexpected read (no query pending) - return 0
+                eprintln!("[ORACLE] Unexpected read in state {:?}", *state);
                 0
             }
         }
@@ -228,17 +258,16 @@ mod tests {
 
     #[test]
     fn test_protocol_replay_block_metadata_query() {
-        // Simulate data that would be returned for BLOCK_METADATA query
-        // (first few words of response)
-        let data: Vec<u32> = (0..1048).collect();
+        // Simulate data for BLOCK_METADATA query (64-bit host format: 2096 u32 values)
+        let data: Vec<u32> = (0..2096).collect();
         let oracle = ProtocolAwareReplayOracle::new(data);
 
         // Send BLOCK_METADATA query with 0 input words
         oracle.write(BLOCK_METADATA_QUERY_ID); // query_type
         oracle.write(0); // input_len = 0
 
-        // First read should return the response length (1048)
-        assert_eq!(oracle.read(), 1048);
+        // First read returns the response length (2096 u32 values for 64-bit format)
+        assert_eq!(oracle.read(), 2096);
 
         // Subsequent reads return data
         assert_eq!(oracle.read(), 0);
@@ -264,34 +293,73 @@ mod tests {
 
     #[test]
     fn test_protocol_replay_next_tx_size_query() {
-        let data = vec![42]; // TX size value
+        // TX size is 1 usize (64-bit) = 2 u32 values in 64-bit format
+        let data = vec![42, 0]; // TX size value: low word = 42, high word = 0
         let oracle = ProtocolAwareReplayOracle::new(data);
 
         // Send NEXT_TX_SIZE query
         oracle.write(NEXT_TX_SIZE_QUERY_ID);
         oracle.write(0); // no input
 
-        // Returns response length (1)
-        assert_eq!(oracle.read(), 1);
+        // Returns response length (2 u32 values for 64-bit format)
+        assert_eq!(oracle.read(), 2);
 
-        // Returns the TX size
+        // Returns the TX size words
         assert_eq!(oracle.read(), 42);
+        assert_eq!(oracle.read(), 0);
     }
 
     #[test]
     fn test_protocol_replay_from_bytes() {
+        // 8 bytes = 2 u32 values
         let bytes = [0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05];
         let oracle = ProtocolAwareReplayOracle::from_bytes(&bytes);
 
         assert_eq!(oracle.len(), 2);
 
-        // Query to trigger response
+        // Query to trigger response (NEXT_TX_SIZE expects 2 u32 values in 64-bit format)
         oracle.write(NEXT_TX_SIZE_QUERY_ID);
         oracle.write(0);
 
-        // Length
-        assert_eq!(oracle.read(), 1);
-        // First data word
+        // Length (2 u32 values)
+        assert_eq!(oracle.read(), 2);
+        // Data words
         assert_eq!(oracle.read(), 0x01020304);
+        assert_eq!(oracle.read(), 0x05060708);
+    }
+
+    #[test]
+    fn test_csr_side_effect_handling() {
+        // Test that spurious write-0 operations are handled correctly
+        let data: Vec<u32> = (0..10).collect();
+        let oracle = ProtocolAwareReplayOracle::new(data);
+
+        // Start NEXT_TX_SIZE query
+        oracle.write(NEXT_TX_SIZE_QUERY_ID);
+        oracle.write(0); // input_len = 0
+
+        // Read response_len
+        assert_eq!(oracle.read(), 2); // 2 u32 values
+
+        // Spurious write-0 after CSR read (simulating csrrw side effect)
+        oracle.write(0);
+
+        // Should still be able to read data
+        assert_eq!(oracle.read(), 0);
+
+        // Another spurious write-0
+        oracle.write(0);
+
+        // Read second value
+        assert_eq!(oracle.read(), 1);
+
+        // Spurious write-0 when transitioning to Idle
+        oracle.write(0);
+
+        // Now in Idle, should be able to start new query
+        oracle.write(UART_QUERY_ID);
+        oracle.write(1); // input_len = 1
+        oracle.write(b'X' as u32); // input data
+        assert_eq!(oracle.read(), 0); // UART has 0 response
     }
 }
