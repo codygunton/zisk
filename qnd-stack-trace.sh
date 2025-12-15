@@ -131,7 +131,7 @@ if [ -n "$SYMBOLS" ]; then
     END { if (skipped > 0) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
 else
     # Fast mode: use objdump labels (no debug symbols needed)
-    riscv64-elf-objdump -d "$PROD_ELF" > "$DUMP_FILE"
+    riscv64-elf-objdump --demangle -d "$PROD_ELF" > "$DUMP_FILE"
 
     # Load dump labels into sorted array, find nearest preceding label for each jump
     # Filter out .LBB labels, deduplicate consecutive identical labels

@@ -243,3 +243,89 @@ Memory sections:
     - BSS: we're NOT stripping .bss (only 544 bytes), so static variables are initialized
 
   The only risk would be if code assumes uninitialized heap memory is zero. But that's generally not a safe assumption anyway.
+
+
+
+ … +33 lines (ctrl+o to expand)
+
+● We've made significant progress. The oracle is working - 6 queries complete successfully and execution runs 11% further (step 225331 vs 202696). The crash seems to be after the oracle data processing.
+
+  Let me summarize what we discovered and implemented:
+
+  Summary of Findings
+
+  Key Discovery: Endianness Mismatch
+
+  The inputs.bin file is big-endian, not little-endian as initially assumed:
+  - First u32 in file: 0x00000830 = 2096 (response_len for BlockMetadata)
+
+  Key Discovery: 64-bit Value Splitting
+
+  The oracle_provider splits 64-bit usize values into pairs of 32-bit reads:
+  - response_len is doubled: 1048 usize → 2096 u32 reads
+  - Each 64-bit value is stored as: low 32 bits first, then high 32 bits
+
+  Implementation: Replay64Oracle
+
+  Created a stateful oracle that:
+  1. Returns response_len halved (2096 → 1048)
+  2. Combines pairs of u32 into u64: ((high << 32) | low)
+  3. Tracks state to handle the response_len/data pattern
+
+  Results
+
+  - 32-bit oracle (big-endian): Crash at step 202696
+  - 64-bit oracle: Crash at step 225331 (11% further)
+  - 6 queries processed successfully before crash
+
+  The remaining crash appears to be in materialize_element in the account cache - likely a data interpretation issue that requires deeper investigation of the zksync-os code.
+
+  Do you want me to continue debugging the remaining crash, or is this enough progress for now?
+
+
+
+● This is not scope creep - it's a bug fix for 64-bit targets. Let me explain:
+
+  The Problem
+
+  The csr_read_word() function performs a CSR read instruction that returns a full register-width value (64 bits on RV64, 32 bits on RV32). However, the function was declared
+
+  pub fn csr_read_word() -> u32 {
+      let mut output;
+      unsafe {
+          core::arch::asm!(
+              "csrrw {rd}, 0x7c0, x0",
+              rd = out(reg) output,  // This is 64 bits on RV64!
+              options(...)
+          );
+      }
+      output  // Compiler truncates to u32
+  }
+
+  On RV64, the assembly reads 64 bits into output, but the -> u32 return type causes the compiler to generate truncation code:
+
+  csrrw a1, 0x7c0, x0   ; Read 64-bit value
+  slli  a1, a1, 0x20    ; Shift left 32
+  srli  a1, a1, 0x20    ; Shift right 32 = CLEAR UPPER 32 BITS
+
+  This destroys the upper 32 bits of every oracle value.
+
+  Why This Matters
+
+  The oracle returns 64-bit values (like 0xe9afe5fae99e198a), but due to truncation, the guest only sees 0x00000000e99e198a. When these truncated values are used for hash verification (Bytes32), they don't match the expected hashes, causing the execution to fail.
+
+  The I/O Format Does NOT Change
+
+  The witness file format remains unchanged - it's still big-endian u32 values. The change is purely in how the guest code reads CSR values:
+
+  - Before: CSR read → truncate to 32 bits → return
+  - After: CSR read → return full register width
+
+  The Replay64Oracle already handles the u32-to-u64 conversion correctly. The bug was that even after the oracle returned correct 64-bit values, the guest's csr_read_word() function was throwing away the upper 32 bits.
+
+  This Is Standard Practice
+
+  The csr_write_word() function in the same file already takes usize:
+  pub fn csr_write_word(word: usize) {  // Already correct!
+
+  The fix makes csr_read_word() consistent with csr_write_word() - both now use the native register width.
