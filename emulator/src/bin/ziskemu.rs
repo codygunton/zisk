@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::{fmt::Write, fs, process};
 use zisk_common::EmuTrace;
-use zisk_oracle::processors::Replay64Oracle;
-use ziskemu::{create_replay64_oracle_callback, EmuOptions, Emulator, ZiskEmulator};
+use zisk_oracle::processors::ReplayOracle;
+use ziskemu::{create_replay_oracle_callback, EmuOptions, Emulator, ZiskEmulator};
 
 fn main() {
     // Create a emulator options instance based on arguments or default values
@@ -17,6 +17,8 @@ fn main() {
 
     // Create oracle callback if oracle flag is set
     // Uses simple sequential replay from pre-recorded witness data
+    // The zksync-os rv64 guest now handles u32<->usize conversion at the CSR level,
+    // so we can pass u32 values directly without conversion.
     let oracle_callback = if options.oracle {
         if let Some(ref inputs_path) = options.inputs {
             if options.verbose {
@@ -34,10 +36,10 @@ fn main() {
                 );
             }
 
-            // Create 64-bit replay oracle from the witness data (big-endian format from zksync-os)
-            // Combines pairs of u32 values into u64 for the 64-bit guest deserializer
-            let replay_oracle = Replay64Oracle::from_bytes_be(&witness_data);
-            Some(create_replay64_oracle_callback(replay_oracle))
+            // Create replay oracle from the witness data (big-endian format from zksync-os)
+            // The rv64 guest now splits/combines usize<->u32 pairs internally
+            let replay_oracle = ReplayOracle::from_bytes_be(&witness_data);
+            Some(create_replay_oracle_callback(replay_oracle))
         } else {
             eprintln!("Warning: --oracle flag set but no inputs file provided");
             None

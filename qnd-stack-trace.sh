@@ -115,9 +115,19 @@ if [ -n "$SYMBOLS" ]; then
                 if (func_name != "" && func_name in debug_addr) {
                     offset = target - func_addr
                     debug_target = debug_addr[func_name] + offset
-                    cmd = "addr2line -e \"" debug_elf "\" -C " sprintf("0x%x", debug_target) " 2>/dev/null"
-                    if ((cmd | getline src_loc) > 0 && src_loc !~ /\?\?:/ && src_loc !~ /:0$/) {
-                        print "     at " src_loc
+                    # Use -i flag to show inlined function frames
+                    cmd = "addr2line -e \"" debug_elf "\" -C -i " sprintf("0x%x", debug_target) " 2>/dev/null"
+                    # Read all lines from addr2line (multiple frames with -i)
+                    first_frame = 1
+                    while ((cmd | getline src_loc) > 0) {
+                        if (src_loc !~ /\?\?:/ && src_loc !~ /:0$/) {
+                            if (first_frame) {
+                                print "     at " src_loc
+                                first_frame = 0
+                            } else {
+                                print "        inlined from " src_loc
+                            }
+                        }
                     }
                     close(cmd)
                 }

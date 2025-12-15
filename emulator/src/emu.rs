@@ -1627,8 +1627,24 @@ impl<'a> Emu<'a> {
         // Store the stats option into the emulator context
         self.ctx.do_stats = options.stats || options.legacy_stats;
 
+        // Track previous PC to detect spin loops (e.g., zksync-os exit at 0x80000008)
+        let mut prev_pc: u64 = 0;
+
         // While not done
         while !self.ctx.inst_ctx.end {
+            // Detect spin loop at special exit address (zksync-os finish pattern)
+            const ZKSYNC_OS_EXIT_PC: u64 = 0x80000008;
+            if self.ctx.inst_ctx.pc == ZKSYNC_OS_EXIT_PC && prev_pc == ZKSYNC_OS_EXIT_PC {
+                if options.verbose {
+                    println!(
+                        "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
+                        ZKSYNC_OS_EXIT_PC, self.ctx.inst_ctx.step
+                    );
+                }
+                self.ctx.inst_ctx.end = true;
+                break;
+            }
+            prev_pc = self.ctx.inst_ctx.pc;
             if options.verbose {
                 println!(
                     "Emu::run() step={} ctx.pc={:#x}",

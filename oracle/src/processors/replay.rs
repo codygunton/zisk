@@ -228,8 +228,8 @@ impl ReplayOracle {
         LAST_READ_POS.store(pos, Ordering::SeqCst);
         if pos < self.data.len() {
             let value = self.data[pos];
-            // Log first 20 reads, then periodically, and around boundaries
-            if pos < 10 || pos == 2096 || pos == 2097 || pos == 2098 || (pos > 0 && pos % 10000 == 0) {
+            // Log first 20 reads, then every 10000, and around BLOCK_METADATA boundary
+            if pos < 20 || pos == 2096 || pos == 2097 || (pos > 0 && pos % 10000 == 0) {
                 eprintln!("[REPLAY] read[{}] = 0x{:08x} ({})", pos, value, value);
             }
             value
