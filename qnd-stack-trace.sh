@@ -3,14 +3,8 @@
 TAIL_N="${TAIL_N:-100000}" # Default to last 100k jumps
 DEBUG_ELF="zksync-os/zksync_os/zksync_os_zisk_debug.elf"
 PROD_ELF="zksync-os/zksync_os/zksync_os_zisk.elf"
-DUMP_FILE=/tmp/zisk.dump
-
-# Rebuild debug ELF if requested (takes ~3 minutes)
-# Usage: REBUILD=1 ./qnd-stack-trace.sh
-if [ -n "$REBUILD" ]; then
-    echo "Rebuilding debug ELF (this takes ~3 minutes)..."
-    (cd zksync-os/zksync_os && ./build.sh --machine zisk --debug)
-fi
+DUMP_FILE="zksync-os/zksync_os/zksync_os_zisk.dump"
+TRACE_FILE="zisk_trace"
 
 # Check debug ELF exists if SYMBOLS mode requested
 if [ -n "$SYMBOLS" ] && [ ! -f "$DEBUG_ELF" ]; then
@@ -20,7 +14,6 @@ if [ -n "$SYMBOLS" ] && [ ! -f "$DEBUG_ELF" ]; then
 fi
 
 # Use /tmp for intermediate files
-TRACE_FILE=/tmp/zisk-trace
 DIFF_FILE=/tmp/pc-diffs
 JUMPS_FILE=/tmp/jumps
 

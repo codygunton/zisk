@@ -10,6 +10,8 @@ INPUTS_BIN="/tmp/inputs/${BLOCK_NUMBER}_inputs.bin"
 LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
     cargo build --bin ziskemu --release
 
+./setup_zksyncos.sh
+
 ./target/release/ziskemu \
     -e zksync-os/zksync_os/zksync_os_zisk.elf \
     -i "$INPUTS_BIN" \
