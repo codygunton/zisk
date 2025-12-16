@@ -26,15 +26,15 @@ with open('$TRACE_FILE') as f:
         print(pc1-pc0)
 " > "$DIFF_FILE"
 
-# Prints address lines where corresponding diff != 4
+# Prints "source destination" lines where corresponding diff != 4
 paste "$TRACE_FILE" "$DIFF_FILE" \
     | awk '{
   # $1 = address, $2 = diff (supports decimal or 0x... hex)
   d = $2
   if (d ~ /^0[xX]/) d = strtonum(d)
-  if (prev_d != 4 && NR > 1) print $1
+  if (prev_d != 4 && NR > 1) print prev " " $1
   prev = $1; prev_d = d
-} END { if (prev_d != 4) print "EOF" }' > "$JUMPS_FILE"
+} END { if (prev_d != 4) print "EOF EOF" }' > "$JUMPS_FILE"
 
 # Use TAIL_N to only look at last N jumps (default: all)
 if [ -n "$TAIL_N" ]; then
@@ -80,8 +80,9 @@ if [ -n "$SYMBOLS" ]; then
         dump_n++
         next
     }
-    NR!=FNR && !/^EOF$/ {
-        target = strtonum($1)
+    NR!=FNR && !/^EOF / {
+        source = strtonum($1)
+        target = strtonum($2)
 
         # Find containing function from objdump labels
         best = -1
@@ -92,8 +93,8 @@ if [ -n "$SYMBOLS" ]; then
         if (best >= 0) {
             current = dump_labels[best]
             if (current != prev) {
-                if (skipped > 0) print "  ..."
-                printf "%x\n  in %s\n", target, current
+                if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..."
+                printf "%x -> %x\n  in %s\n", source, target, current
 
                 # Find containing function from nm symbols for addr2line
                 func_addr = -1
@@ -131,7 +132,7 @@ if [ -n "$SYMBOLS" ]; then
             prev = current
         }
     }
-    END { if (skipped > 0) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
+    END { if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
 else
     # Fast mode: use objdump labels (no debug symbols needed)
     riscv64-elf-objdump --demangle -d "$PROD_ELF" > "$DUMP_FILE"
@@ -146,8 +147,9 @@ else
         n++
         next
     }
-    NR!=FNR && !/^EOF$/ {
-        target = strtonum($1)
+    NR!=FNR && !/^EOF / {
+        source = strtonum($1)
+        target = strtonum($2)
         # Find largest label addr <= target
         best = -1
         for (i = 0; i < n; i++) {
@@ -156,8 +158,8 @@ else
         if (best >= 0) {
             current = labels[best]
             if (current != prev) {
-                if (skipped > 0) print "  ..."
-                printf "%x\n  in %s\n", target, current
+                if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..."
+                printf "%x -> %x\n  in %s\n", source, target, current
                 skipped = 0
             } else {
                 skipped++
@@ -165,5 +167,5 @@ else
             prev = current
         }
     }
-    END { if (skipped > 0) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
+    END { if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
 fi
