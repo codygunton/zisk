@@ -28,6 +28,7 @@ pub mod oracle_helper;
 mod regions_of_interest;
 pub mod stats;
 pub mod stats_report;
+pub mod witness;
 
 pub use elf_symbol_reader::*;
 pub use emu::*;
@@ -45,3 +46,10 @@ pub use oracle_helper::*;
 pub use regions_of_interest::*;
 pub use stats::*;
 pub use stats_report::*;
+pub use witness::{create_witness_capture_callback, WitnessCapture};
+
+// Re-export oracle types for external crates
+pub use zisk_core::{OracleCallback, OracleOp};
+
+// Re-export EmuTrace for witness generation callers
+pub use zisk_common::EmuTrace;
