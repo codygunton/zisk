@@ -24,17 +24,9 @@ cd "$ZISK_DIR"
 PROVING_KEY="${PROVING_KEY:-$ZISK_DIR/provingKey}"
 ./target/release/cargo-zisk rom-setup --elf "$OUTPUT_ELF" --proving-key "$PROVING_KEY" -v
 
-# Generate witness data
+# Generate witness data using Zisk (64-bit)
 echo ""
-echo "=== Generating witness data ==="
-
-# Download 32-bit evm_replay.bin for airbender (our build is 64-bit for Zisk)
-ZKSYNC_OS_VERSION="${ZKSYNC_OS_VERSION:-v0.2.5}"
-if [[ ! -f "$ZKSYNCOS_DIR/evm_replay.bin" ]] || [[ $(stat -c%s "$ZKSYNCOS_DIR/evm_replay.bin") -lt 1000000 ]]; then
-    echo "Downloading 32-bit evm_replay.bin for airbender..."
-    curl -fsSL -o "$ZKSYNCOS_DIR/evm_replay.bin" \
-        "https://github.com/matter-labs/zksync-os/releases/download/$ZKSYNC_OS_VERSION/evm_replay.bin"
-fi
+echo "=== Generating witness data (Zisk 64-bit) ==="
 
 INPUTS_DIR="/tmp/inputs"
 WITNESS_HEX="$INPUTS_DIR/${BLOCK_NUMBER}_witness"
@@ -43,9 +35,12 @@ mkdir -p "$INPUTS_DIR"
 ETH_RUNNER_DIR="$ZISK_DIR/zksync-os/tests/instances/eth_runner"
 cd "$ETH_RUNNER_DIR"
 
-echo "Running eth_runner for block $BLOCK_NUMBER..."
-RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info cargo run --release \
-    --features rig/no_print,rig/unlimited_native \
+echo "Running eth_runner with Zisk witness generation for block $BLOCK_NUMBER..."
+# Use zisk-witness feature for 64-bit witness generation (not airbender 32-bit)
+# LIBRARY_PATH needed for Intel oneAPI liomp5 dependency
+LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:${LIBRARY_PATH:-}" \
+RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
+    --features rig/no_print,rig/unlimited_native,rig/zisk-witness \
     -- single-run \
     --block-dir "$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER" \
     --randomized \
