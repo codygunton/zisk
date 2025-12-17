@@ -315,8 +315,26 @@ zksync-os/
 
 #### Group D: Testing & Verification (After Group C)
 
-- [ ] **Task #5**: Test witness generation with Zisk
+- [x] **Task #5**: Test witness generation with Zisk
   - No code changes - manual testing task
+  - **Status**: COMPLETED - Witness generation works end-to-end
+  - **Fixes Applied**:
+    1. Added CSRRW side-effect handling to oracle_provider
+       - CSRRW instruction always writes 0 when reading, causing spurious OracleOp::Write(0)
+       - Fixed by ignoring write(0) when response state is active
+    2. Fixed state tree timing bug in chain.rs
+       - Zisk oracle was created AFTER forward run updated state tree
+       - But proof_data was created BEFORE with pre-forward-run state root
+       - This caused merkle proof verification failures (computed root ≠ expected root)
+       - Fixed by moving zisk_oracle creation to BEFORE the forward run
+    3. Fixed self-loop exit detection in Zisk emulator (emu.rs)
+       - zksync-os uses `loop { continue; }` pattern for success/error termination
+       - Changed from detecting specific address 0x80000008 to detecting ANY self-loop (pc == prev_pc)
+       - Now correctly detects exit at PC=0x800bb0d4
+  - **Final Result**: Witness generation completes successfully
+    - Exit detected at PC=0x800bb0d4, step=24695992
+    - Generated witness with 68564 u32 values
+    - "All good!" verification passed
   - Steps:
     1. Build zksync-os with `--features zisk-witness`:
        ```bash

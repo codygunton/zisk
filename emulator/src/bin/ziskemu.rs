@@ -1,8 +1,8 @@
 use clap::Parser;
 use std::{fmt::Write, fs, process};
 use zisk_common::EmuTrace;
-use zisk_oracle::processors::Replay64Oracle;
-use ziskemu::{create_replay64_oracle_callback, EmuOptions, Emulator, ZiskEmulator};
+use zisk_oracle::processors::ReplayOracle;
+use ziskemu::{create_replay_oracle_callback, EmuOptions, Emulator, ZiskEmulator};
 
 fn main() {
     // Create a emulator options instance based on arguments or default values
@@ -16,9 +16,9 @@ fn main() {
     }
 
     // Create oracle callback if oracle flag is set
-    // Uses Replay64Oracle to convert 32-bit witness data to 64-bit format.
-    // The witness file from zksync-os contains u32 pairs (low, high) for each u64 value.
-    // Replay64Oracle: halves response_len and combines u32 pairs into u64 values.
+    // Uses ReplayOracle to replay u32 witness data directly.
+    // The witness file from zksync-os contains u32 values in big-endian format.
+    // The 64-bit guest handles combining u32 pairs into u64 via io_oracle.
     let oracle_callback = if options.oracle {
         if let Some(ref inputs_path) = options.inputs {
             if options.verbose {
@@ -36,10 +36,10 @@ fn main() {
                 );
             }
 
-            // Create 64-bit replay oracle from the witness data (big-endian format from zksync-os)
-            // Converts: response_len / 2, and combines u32 pairs (low, high) into u64
-            let replay_oracle = Replay64Oracle::from_bytes_be(&witness_data);
-            Some(create_replay64_oracle_callback(replay_oracle))
+            // Create replay oracle from the witness data (big-endian format from zksync-os)
+            // Returns u32 values directly; 64-bit guest reads pairs and combines them
+            let replay_oracle = ReplayOracle::from_bytes_be(&witness_data);
+            Some(create_replay_oracle_callback(replay_oracle))
         } else {
             eprintln!("Warning: --oracle flag set but no inputs file provided");
             None

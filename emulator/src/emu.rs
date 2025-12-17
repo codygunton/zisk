@@ -1627,18 +1627,18 @@ impl<'a> Emu<'a> {
         // Store the stats option into the emulator context
         self.ctx.do_stats = options.stats || options.legacy_stats;
 
-        // Track previous PC to detect spin loops (e.g., zksync-os exit at 0x80000008)
+        // Track previous PC to detect spin loops (e.g., zksync-os exit)
         let mut prev_pc: u64 = 0;
 
         // While not done
         while !self.ctx.inst_ctx.end {
-            // Detect spin loop at special exit address (zksync-os finish pattern)
-            const ZKSYNC_OS_EXIT_PC: u64 = 0x80000008;
-            if self.ctx.inst_ctx.pc == ZKSYNC_OS_EXIT_PC && prev_pc == ZKSYNC_OS_EXIT_PC {
+            // Detect any self-loop (pc == prev_pc means jump to self)
+            // This is used by zksync-os to signal completion (both success and error)
+            if self.ctx.inst_ctx.pc == prev_pc {
                 if options.verbose {
                     println!(
                         "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
-                        ZKSYNC_OS_EXIT_PC, self.ctx.inst_ctx.step
+                        self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
                     );
                 }
                 self.ctx.inst_ctx.end = true;

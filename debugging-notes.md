@@ -329,3 +329,105 @@ Memory sections:
   pub fn csr_write_word(word: usize) {  // Already correct!
 
   The fix makes csr_read_word() consistent with csr_write_word() - both now use the native register width.
+
+
+
+
+To regen witness:
+RUST_LOG=eth_runner=info cargo run --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir blocks/22244135 --randomized --witness-output-dir /tmp/inputs
+then
+xxd -r -p /tmp/inputs/22244135_witness /tmp/inputs/22244135_inputs.bin
+
+
+● Bash(cat << 'EOF'
+      # Step 1: Calculate expected response_len for ZK_PROOF_DATA_INIT…)
+  ⎿  # Step 1: Calculate expected response_len for ZK_PROOF_DATA_INIT
+     #
+     # ProofData contains:
+     … +23 lines (ctrl+o to expand)
+
+● I was partially wrong! There IS a query with response_len=12 at position 1500 that looks like it could be ZK_PROOF_DATA_INIT:
+
+  root: 506b017fe690679f543c09f3f6ab124256aca0643d5e1d053df939f62f62c697
+  next_free_slot: 18425521115039322478
+  last_block_timestamp: 0
+
+● The 64-bit execution reads position 6148 but gets 0 - meaning the witness data has run out at that position in the converted format. Let me trace through the Replay64Oracle conversion to understand why.
+
+
+  1. The proving code IS compiled into the airbender ELF - Found at address 0x3c7d8 in zksync_os_airbender.dump:
+  3c7d4: lui a1,0x40070
+  3c7d8: addi a1,a1,1  # 40070001 (ZK_PROOF_DATA_INIT query ID)
+  3c7dc: csrw 0x7c0,a1  # Write to CSR
+  2. The call chain exists:
+    - run_proving (0x7a090) → run_prepared (0x6c1bc) → IOSubsystemExt::finish (0x3c6ec, called at 0x714b8)
+    - The ZK_PROOF_DATA_INIT query is inside IOSubsystemExt::finish
+  3. The binaries are correct - evm_replay.bin and zksync_os_airbender.bin have identical MD5 hashes.
+  4. The zisk ELF also has the proving code at 0x8005e534, confirming the build configuration is correct.
+
+  What I Was Doing
+
+  I was about to verify that the simulator actually executes the IOSubsystemExt::finish function at runtime. The UART debug output (from the print_debug_info feature) should show if the code is reached, since we added debug prints before/after ZKProofDataQuery::get().
+
+
+cd /home/cody/zksync-os/tests/instances/eth_runner && \
+  RUST_LOG=eth_runner=info cargo run --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir blocks/22244135 --randomized 2>&1 | grep "cycles to finish"
+
+  Output will show:
+  Took 228508939 cycles to finish
+
+
+  ZK_PROOF_DATA Oracle Calls for Block 22244135:
+  - 1 ZK_PROOF_DATA query at cycle 170,658,642
+  - Query was the 17,841st oracle query overall
+  - Total execution: 228,463,468 cycles
+
+  The ZK_PROOF_DATA call happens about 75% through the execution (170M / 228M cycles).
+
+  Command to reproduce:
+  cd /home/cody/zksync-os/tests/instances/eth_runner && \
+  RUST_LOG=eth_runner=info cargo run --release --features rig/no_print,rig/unlimited_native -- single-run --block-dir blocks/22244135 --randomized 2>&1 | grep -E "(ORACLE|ZK_PROOF|cycles to finish)"
+
+
+
+● 2,427 vs 126 - that's the smoking gun!
+
+  The 64-bit guest is making 19x more NEXT_TX_SIZE queries than airbender did. This means:
+
+  The Diagnosis
+
+  The 64-bit guest is stuck in a loop repeatedly asking "is there another transaction?"
+
+  It's reading garbage from the witness because the query order doesn't match:
+
+  | Order | Airbender (witness) | 64-bit Zisk          |
+  |-------|---------------------|----------------------|
+  | 1     | BLOCK_METADATA      | BLOCK_METADATA ✓     |
+  | 2     | ???                 | DA_COMMITMENT_SCHEME |
+  | 3     | ???                 | NEXT_TX_SIZE         |
+  | 4     | ???                 | TX_DATA_WORDS        |
+
+  When queries are out of order, the 64-bit guest reads response data meant for a different query. It interprets random data as "transaction size", thinks there's another TX to process, and loops.
+
+  Verify with:
+
+  # What's the 32-bit query order? Check first 10 non-UART queries from airbender
+  # (You'd need to get this from your airbender trace)
+
+  # Compare to 64-bit order:
+  ./target/release/ziskemu -e zksync-os/zksync_os/zksync_os_zisk.elf -i /tmp/inputs/22244135_witness.bin --oracle -v 2>&1 | grep "write 0x00000000400" | head -20
+
+  The fix would require either:
+  1. Making 64-bit query order match 32-bit, OR
+  2. Generating witness from a 64-bit execution
+
+
+
+  Both branches are correct. Now I've identified the root cause - the csrrw instruction always does both a read AND a write. When the guest "reads" from CSR 0x7c0 using csrrw rd, 0x7c0, x0, Zisk:
+
+  1. First reads from the CSR (oracle callback: OracleOp::Read)
+  2. Then writes x0 (=0) to the CSR (oracle callback: OracleOp::Write(0))
+
+  So every "read" also writes 0, which the oracle interprets as a new query with type 0.
+
+  Let me check if there's any special handling for this case in the oracle or if we need to fix this.
