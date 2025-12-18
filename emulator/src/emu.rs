@@ -1019,6 +1019,9 @@ impl<'a> Emu<'a> {
                 if self.ctx.do_stats {
                     self.ctx.stats.on_memory_write(addr, 8, val);
                 }
+
+                // Handle Blake2 CSR 0x7c7 delegation if needed
+                self.handle_blake2_if_needed(addr);
             }
             STORE_IND => {
                 // Calculate value
@@ -1043,11 +1046,29 @@ impl<'a> Emu<'a> {
                 if self.ctx.do_stats {
                     self.ctx.stats.on_memory_write(addr, instruction.ind_width, val);
                 }
+
+                // Handle Blake2 CSR 0x7c7 delegation if needed
+                self.handle_blake2_if_needed(addr);
             }
             _ => panic!(
                 "Emu::store_c() Invalid store={} pc={}",
                 instruction.store, self.ctx.inst_ctx.pc
             ),
+        }
+    }
+
+    /// Handle Blake2 CSR 0x7c7 delegation if the write address matches.
+    ///
+    /// This is called after memory writes to check if Blake2 delegation should be triggered.
+    /// Uses register values x10-x13 for the Blake2 operation.
+    #[inline(always)]
+    fn handle_blake2_if_needed(&mut self, addr: u64) {
+        if self.ctx.inst_ctx.mem.is_blake2_csr_write(addr) {
+            let x10 = self.ctx.inst_ctx.regs[10];
+            let x11 = self.ctx.inst_ctx.regs[11];
+            let x12 = self.ctx.inst_ctx.regs[12] as u32;
+            let x13 = self.ctx.inst_ctx.regs[13] as u32;
+            self.ctx.inst_ctx.mem.handle_blake2_delegation(x10, x11, x12, x13);
         }
     }
 

@@ -629,17 +629,27 @@ impl Mem {
             }
         }
 
-        // Handle CSR 0x7c7 (BLAKE2_ROUND_DELEGATION) writes
-        if addr == BLAKE2_CSR_ADDR && self.blake2_enabled {
-            self.handle_blake2_delegation();
-        }
+        // Note: Blake2 CSR 0x7c7 writes are handled by the emulator (emu.rs)
+        // which has access to register values. See Emu::handle_blake2_if_needed().
+    }
+
+    /// Check if a write address is the Blake2 CSR
+    #[inline]
+    pub fn is_blake2_csr_write(&self, addr: u64) -> bool {
+        addr == BLAKE2_CSR_ADDR && self.blake2_enabled
     }
 
     /// Handle Blake2s CSR 0x7c7 delegation
     ///
-    /// Reads registers x10-x13 from memory, performs Blake2s mixing function,
-    /// and writes the result back to memory.
-    fn handle_blake2_delegation(&mut self) {
+    /// Performs Blake2s mixing function using the provided register values,
+    /// reading/writing state from/to memory.
+    ///
+    /// # Arguments
+    /// * `x10` - Pointer to state (8 u32) + extended_state (16 u32)
+    /// * `x11` - Pointer to input buffer (16 u32)
+    /// * `x12` - Round bitmask (power of 2)
+    /// * `x13` - Control flags
+    pub fn handle_blake2_delegation(&mut self, x10: u64, x11: u64, x12: u32, x13: u32) {
         use crate::blake2s::{
             mixing_function, BLAKE2S_BLOCK_SIZE_BYTES, BLAKE2S_BLOCK_SIZE_U32_WORDS,
             BLAKE2S_EXTENDED_STATE_WIDTH_IN_U32_WORDS, BLAKE2S_STATE_WIDTH_IN_U32_WORDS,
@@ -647,12 +657,14 @@ impl Mem {
             TEST_IF_LAST_ROUND_MASK,
         };
 
-        // Read registers x10-x13 from memory
-        // Registers are stored at REG_FIRST + reg_num * 8
-        let x10 = self.read(REG_FIRST + 10 * 8, 8) as u64;
-        let x11 = self.read(REG_FIRST + 11 * 8, 8) as u64;
-        let x12 = self.read(REG_FIRST + 12 * 8, 8) as u32;
-        let x13 = self.read(REG_FIRST + 13 * 8, 8) as u32;
+        // Validate pointers - x10 and x11 must be non-zero valid addresses
+        if x10 == 0 || x11 == 0 {
+            eprintln!(
+                "[BLAKE2] WARNING: Invalid pointers x10=0x{:x} x11=0x{:x}, skipping delegation",
+                x10, x11
+            );
+            return;
+        }
 
         // Parse control flags
         let mode_compression = (x13 & TEST_IF_COMPRESSION_MODE_MASK) != 0;
