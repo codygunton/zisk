@@ -14,6 +14,9 @@ BLOCK_NUMBER="${1:-22244135}"
 ZKSYNCOS_DIR="$ZISK_DIR/zksync-os/zksync_os"
 OUTPUT_ELF="$ZKSYNCOS_DIR/zksync_os_zisk.elf"
 
+LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
+    cargo build --bin ziskemu --release
+
 # Build zksync-os for Zisk
 "$ZKSYNCOS_DIR/build.sh" --machine zisk
 
@@ -39,7 +42,7 @@ echo "Running eth_runner with Zisk witness generation for block $BLOCK_NUMBER...
 # Use zisk-witness feature for 64-bit witness generation (not airbender 32-bit)
 # LIBRARY_PATH needed for Intel oneAPI liomp5 dependency
 LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:${LIBRARY_PATH:-}" \
-RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
+    RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features rig/no_print,rig/unlimited_native,rig/zisk-witness \
     -- single-run \
     --block-dir "$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER" \
