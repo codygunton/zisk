@@ -1541,6 +1541,8 @@ impl<'a> Emu<'a> {
         // Set oracle callback after context creation (context creation resets memory)
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
+            // Enable Blake2 delegation when oracle is active (for zksync-os proving)
+            self.ctx.inst_ctx.mem.enable_blake2_delegation();
         }
 
         let mut elf = ElfSymbolReader::new();
@@ -1751,6 +1753,8 @@ impl<'a> Emu<'a> {
         // Set oracle callback after context creation (context creation resets memory)
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
+            // Enable Blake2 delegation when oracle is active (for zksync-os proving)
+            self.ctx.inst_ctx.mem.enable_blake2_delegation();
         }
 
         // Init pc to the rom entry address

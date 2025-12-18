@@ -51,6 +51,7 @@
 //!
 //! The zisk_core crate contains basic structures and functionality used by several other modules:
 //! opcodes, instructions and transpilation
+pub mod blake2s;
 pub mod elf2rom;
 pub mod elf_extraction;
 pub mod fcall;
