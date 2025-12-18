@@ -41,7 +41,9 @@ cd "$ETH_RUNNER_DIR"
 echo "Running eth_runner with Zisk witness generation for block $BLOCK_NUMBER..."
 # Use zisk-witness feature for 64-bit witness generation (not airbender 32-bit)
 # LIBRARY_PATH needed for Intel oneAPI liomp5 dependency
+# ZISK_QUIET=1 suppresses per-step logging (12M+ lines)
 LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:${LIBRARY_PATH:-}" \
+    ZISK_QUIET=1 \
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features rig/no_print,rig/unlimited_native,rig/zisk-witness \
     -- single-run \

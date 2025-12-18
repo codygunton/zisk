@@ -1,8 +1,15 @@
 use std::mem;
+use std::sync::OnceLock;
 
 use crate::{
     ElfSymbolReader, EmuContext, EmuFullTraceStep, EmuOptions, EmuRegTrace, ParEmuOptions,
 };
+
+/// Cached check for ZISK_QUIET env var (suppresses per-step logging)
+fn is_quiet() -> bool {
+    static QUIET: OnceLock<bool> = OnceLock::new();
+    *QUIET.get_or_init(|| std::env::var("ZISK_QUIET").is_ok())
+}
 use fields::PrimeField64;
 use mem_common::MemHelpers;
 use riscv::RiscVRegisters;
@@ -1647,7 +1654,8 @@ impl<'a> Emu<'a> {
                 break;
             }
             prev_pc = self.ctx.inst_ctx.pc;
-            if options.verbose {
+            // Per-step logging can be suppressed with ZISK_QUIET=1
+            if options.verbose && !is_quiet() {
                 println!(
                     "Emu::run() step={} ctx.pc={:#x}",
                     self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
@@ -1714,6 +1722,14 @@ impl<'a> Emu<'a> {
         if self.ctx.inst_ctx.error {
             eprintln!(
                 "Emu::run() finished with error at step={} pc=0x{:x}",
+                self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
+            );
+        }
+
+        // Print final step count when verbose but quiet (suppressed per-step logging)
+        if options.verbose && is_quiet() {
+            eprintln!(
+                "Emu::run() completed: steps={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
             );
         }
