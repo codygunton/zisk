@@ -431,3 +431,60 @@ cd /home/cody/zksync-os/tests/instances/eth_runner && \
   So every "read" also writes 0, which the oracle interprets as a new query with type 0.
 
   Let me check if there's any special handling for this case in the oracle or if we need to fix this.
+
+
+
+  - 0x40030000 = INITIAL_STORAGE_SLOT_VALUE_QUERY_ID: Gets the initial value of a storage slot before modifications
+  - 0x4002f000 = FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID: Gets preimage data specific to flat storage implementation (merkle proof data)
+
+
+
+  ● Now I can map the PCs to functions:
+
+  PC 0x8558 (RFD - INITIAL_STORAGE_SLOT):
+  - Function: GenericPubdataAwarePlainStorage::materialize_element (starts at 0x7dac)
+
+  PC 0x9808 (RFD-1 - FLAT_STORAGE_PREIMAGE):
+  - Function: BytecodeAndAccountDataPreimagesStorage::expose_preimage (starts at 0x91a0)
+
+  Summary
+
+  | Query       | Type                  | Airbender PC | Airbender Function  | Zisk                                   |
+  |-------------|-----------------------|--------------|---------------------|----------------------------------------|
+  | RFD-1 (#10) | FLAT_STORAGE_PREIMAGE | 0x9808       | expose_preimage     | Same query (pc=0x0)                    |
+  | RFD (#11)   | INITIAL_STORAGE_SLOT  | 0x8558       | materialize_element | SKIPPED → jumps to NEXT_TX_SIZE (tx=2) |
+
+  The divergence: After the 10th query (expose_preimage), Airbender's materialize_element continues making storage slot queries for transaction 1. Zisk instead moves on to transaction 2 entirely.
+
+  This suggests Zisk is somehow not iterating through the same storage elements that Airbender does - it's either:
+  1. Taking a different code path in the storage iteration
+  2. Has different state that causes fewer storage lookups
+  3. The 64-bit vs 32-bit difference affects loop/iteration behavior
+
+
+
+● The responses are identical for the first queries, but look at the transaction progression:
+
+  - Airbender tx=1: 5+ INITIAL_STORAGE_SLOT queries
+  - Zisk tx=1: Only 2 INITIAL_STORAGE_SLOT queries, then moves to tx=2
+
+  The oracle responses are correct (same data), but Zisk's guest-side cache is hitting more often. The issue is in how the 64-bit guest writes/reads oracle data.
+
+  The bug is in ZiskOracleBridge:
+
+  OracleOp::Write(val) => {
+      bridge.write(val as u32);  // TRUNCATES 64-bit write to 32 bits!
+      0
+  }
+  OracleOp::Read => bridge.read() as u64,  // ZERO-EXTENDS 32-bit to 64 bits!
+
+  When the 64-bit guest sends a storage address to query:
+  1. It writes the address as 3 usizes (3 × 64 bits = 192 bits for B160)
+  2. But each 64-bit write is truncated to 32 bits!
+  3. The oracle only sees the low 32 bits of each limb
+
+  This means cache keys are corrupted - addresses like 0x0000000012345678_9ABCDEF0 and 0x0000000000000000_9ABCDEF0 would appear identical because only the low word survives!
+
+  This causes false cache hits - the 64-bit guest thinks it already has cached data for a key when it's actually a different key that got truncated to the same value.
+
+  The fix would be to properly combine pairs of u32 values for 64-bit reads, and split 64-bit writes into pairs of u32 values.
