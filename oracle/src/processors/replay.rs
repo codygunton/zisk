@@ -186,6 +186,59 @@ impl ReplayOracle {
         Self::new(data)
     }
 
+    /// Create a replay oracle from hex-encoded text.
+    ///
+    /// The zksync-os witness generator outputs u32 values as 8-character hex strings
+    /// (big-endian format). Each 8 ASCII chars represents one u32 value.
+    ///
+    /// # Arguments
+    /// * `hex_text` - ASCII hex string where each 8 chars is a big-endian u32
+    ///
+    /// # Example
+    /// ```
+    /// use zisk_oracle::processors::ReplayOracle;
+    /// let hex = "00000830deadbeef";  // Two u32 values: 2096 and 0xdeadbeef
+    /// let oracle = ReplayOracle::from_hex(hex);
+    /// assert_eq!(oracle.read(), 0x00000830);
+    /// assert_eq!(oracle.read(), 0xdeadbeef);
+    /// ```
+    pub fn from_hex(hex_text: &str) -> Self {
+        let hex_text = hex_text.trim();
+        let data: Vec<u32> = hex_text
+            .as_bytes()
+            .chunks(8)
+            .filter_map(|chunk| {
+                if chunk.len() == 8 {
+                    let s = std::str::from_utf8(chunk).ok()?;
+                    u32::from_str_radix(s, 16).ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        eprintln!(
+            "[REPLAY] Loaded {} u32 values from hex text ({} chars)",
+            data.len(),
+            hex_text.len()
+        );
+
+        // Log first few values for debugging
+        for (i, val) in data.iter().take(10).enumerate() {
+            eprintln!("[REPLAY] hex[{}] = 0x{:08x} ({})", i, val, val);
+        }
+
+        Self::new(data)
+    }
+
+    /// Create a replay oracle from hex-encoded bytes.
+    ///
+    /// Convenience wrapper that converts bytes to string and calls `from_hex`.
+    pub fn from_hex_bytes(bytes: &[u8]) -> Self {
+        let hex_text = std::str::from_utf8(bytes).expect("witness file should be valid UTF-8");
+        Self::from_hex(hex_text)
+    }
+
     /// Create a replay oracle from 64-bit witness format.
     ///
     /// The zksync-os witness generator stores each 64-bit usize as two 32-bit values

@@ -36,9 +36,10 @@ fn main() {
                 );
             }
 
-            // Create replay oracle from the witness data (big-endian format from zksync-os)
+            // Create replay oracle from the witness data
+            // The zksync-os witness is hex text (8 ASCII chars per u32 value)
             // Returns u32 values directly; 64-bit guest reads pairs and combines them
-            let replay_oracle = ReplayOracle::from_bytes_be(&witness_data);
+            let replay_oracle = ReplayOracle::from_hex_bytes(&witness_data);
             Some(create_replay_oracle_callback(replay_oracle))
         } else {
             eprintln!("Warning: --oracle flag set but no inputs file provided");
