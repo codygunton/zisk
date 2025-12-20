@@ -3,4 +3,4 @@
 	url = ./zksync-airbender
 [submodule "zksync-os"]
 	path = zksync-os
-	url = ./zksync-os
+	url = ./zksync-airbender
