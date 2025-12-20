@@ -488,3 +488,120 @@ cd /home/cody/zksync-os/tests/instances/eth_runner && \
   This causes false cache hits - the 64-bit guest thinks it already has cached data for a key when it's actually a different key that got truncated to the same value.
 
   The fix would be to properly combine pairs of u32 values for 64-bit reads, and split 64-bit writes into pairs of u32 values.
+
+
+
+● This is the smoking gun:
+
+  | Emulator  | Unique addresses queried |
+  |-----------|--------------------------|
+  | Zisk      | 1 (only 0x8003)          |
+  | Airbender | 30+ contract addresses   |
+
+  What this means:
+  - Airbender is executing contract code (SLOAD/SSTORE on user contracts like 0x55725066..., 0x24ad5f90...)
+  - Zisk is NOT executing contract code - it only does account property lookups (0x8003 for nonce/balance checks) and then... stops
+
+  The transactions in Zisk are starting (nonce gets checked via 0x8003) but the actual contract execution isn't happening. Either:
+
+  1. Transactions are reverting early in the 64-bit binary
+  2. Contract CALLs aren't being made due to a code path difference
+  3. The Zisk emulator has a bug causing early termination
+  4. The 64-bit binary was built incorrectly or has different conditional compilation
+
+  This is a significant bug - the Zisk path isn't actually executing the transactions properly. Want me to dig into where the execution diverges?
+
+
+
+● Summary: Complete Data Flow for FLAT_STORAGE_PREIMAGE Query
+
+  Here's how the query flows:
+
+  Guest Side (makes the query)
+
+  1. preimage_cache.rs:111-122 - Guest requests preimage:
+  let it = oracle
+      .raw_query(FLAT_STORAGE_GENERIC_PREIMAGE_QUERY_ID, hash)  // 0x4002f000
+      .expect("must make an iterator for preimage");
+  let mut buffered = UsizeAlignedByteBox::from_usize_iterator_in(it, self.allocator.clone());
+  buffered.truncated_to_byte_length(expected_preimage_len_in_bytes);
+
+  2. io_oracle/mod.rs:70-119 - Guest's raw_query implementation:
+  // Write query type
+  NDS::csr_write_impl(query_type as usize);  // 0x4002f000
+
+  // On 64-bit: write length as u32 count (doubled)
+  NDS::csr_write_impl(iterator_len * 2);  // Bytes32 = 4 usizes, so writes 8
+
+  // On 64-bit: split each u64 input into two u32 writes
+  for value in iter_to_write {
+      NDS::csr_write_impl((value as u32) as usize);       // low 32 bits
+      NDS::csr_write_impl(((value >> 32) as u32) as usize); // high 32 bits
+  }
+
+  // Read response length (on 64-bit: divide by 2 for u64 count)
+  let remaining_len = NDS::csr_read_impl() / 2;
+
+  3. io_oracle/mod.rs:22-42 - Iterator reads response (64-bit path):
+  fn next(&mut self) -> Option<Self::Item> {
+      // On 64-bit: read two u32s and combine into one u64
+      let low = I::csr_read_impl() as u32;
+      let high = I::csr_read_impl() as u32;
+      Some(((high as usize) << 32) | (low as usize))
+  }
+
+  ---
+  Host Side (handles the query)
+
+  4. oracle_provider/src/lib.rs:473-528 - Host receives query via write_impl:
+  - Buffers query type, length, and input data
+  - Combines pairs of u32 writes into u64 values
+
+  5. generic_preimage.rs:30-55 - Query processor:
+  fn process_buffered_query(&mut self, query_id: u32, query: Vec<usize>, _memory: &M)
+      -> Box<dyn ExactSizeIterator<Item = usize>>
+  {
+      let hash = Bytes32::from_iter(&mut query.into_iter())?;
+      let preimage = self.preimage_source.get_preimage(hash)?;  // Returns Vec<u8>
+
+      // Convert bytes to usize iterator
+      DynUsizeIterator::from_constructor(preimage, |inner_ref| {
+          ReadIterWrapper::from(inner_ref.iter().copied())
+      })
+  }
+
+  6. usize_rw.rs:63-74 - ReadIterWrapper converts bytes to u64:
+  fn next(&mut self) -> Option<Self::Item> {
+      let mut dst = 0usize.to_ne_bytes();  // 8 bytes on 64-bit host
+      for (dst, src) in dst.iter_mut().zip(&mut self.inner) {
+          *dst = src;  // Copy bytes into native-endian buffer
+      }
+      Some(usize::from_ne_bytes(dst))  // Interpret as little-endian u64
+  }
+
+  7. oracle_provider/src/lib.rs:429-471 - Host returns response via read_impl:
+  fn read_impl(&mut self) -> u32 {
+      // First read: return response length (u32 count)
+      if let Some(len) = self.iterator_len_to_indicate.take() {
+          return len;  // e.g., 32 for 128-byte account data
+      }
+
+      // Subsequent reads: split each u64 into low/high u32
+      let next = iterator.next()?;  // Get u64 from processor
+      let high = (next >> 32) as u32;
+      let low = next as u32;
+      self.high_half = Some(high);  // Cache high for next read
+      low  // Return low first
+  }
+
+  ---
+  The Key 64-bit Difference
+
+  On 64-bit guest (io_oracle/mod.rs:32-37):
+  - Response length is divided by 2: remaining_len = NDS::csr_read_impl() / 2
+  - Each next() reads TWO u32 values and combines: ((high << 32) | low)
+
+  This should reconstruct the same byte sequence as 32-bit, but the investigation showed the
+  execution diverges AFTER receiving correct data, suggesting the issue is in the guest
+  binary's execution logic rather than the data transfer.
+
