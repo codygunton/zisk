@@ -4,7 +4,8 @@ TAIL_N="${TAIL_N:-100000}" # Default to last 100k jumps
 DEBUG_ELF="zksync-os/zksync_os/zksync_os_zisk_debug.elf"
 PROD_ELF="zksync-os/zksync_os/zksync_os_zisk.elf"
 DUMP_FILE="zksync-os/zksync_os/zksync_os_zisk.dump"
-TRACE_FILE="zisk_trace"
+TRACE_FILE="/tmp/zisk-trace"
+OUTPUT_FILE="/tmp/stack-trace.log"
 
 # Check debug ELF exists if SYMBOLS mode requested
 if [ -n "$SYMBOLS" ] && [ ! -f "$DEBUG_ELF" ]; then
@@ -17,7 +18,10 @@ fi
 DIFF_FILE=/tmp/pc-diffs
 JUMPS_FILE=/tmp/jumps
 
-./execute.sh 2>&1 | grep "ctx.pc=" | cut -d = -f3 > "$TRACE_FILE"
+echo "Generating stack trace..."
+
+# Run without ZISK_QUIET to capture PC trace
+ZISK_QUIET=0 ./execute.sh 2>&1 | grep "ctx.pc=" | cut -d = -f3 > "$TRACE_FILE"
 
 python -c "
 with open('$TRACE_FILE') as f:
@@ -46,8 +50,8 @@ if [ -n "$SYMBOLS" ]; then
     riscv64-elf-objdump --demangle -d "$PROD_ELF" > "$DUMP_FILE"
 
     # Build symbol tables for address translation
-    PROD_SYMBOLS=/tmp/prod_symbols
-    DEBUG_SYMBOLS=/tmp/debug_symbols
+    PROD_SYMBOLS=/tmp/prod-symbols
+    DEBUG_SYMBOLS=/tmp/debug-symbols
     riscv64-elf-nm -n "$PROD_ELF" > "$PROD_SYMBOLS"
     riscv64-elf-nm "zksync-os/zksync_os/zksync_os_zisk_debug.elf" > "$DEBUG_SYMBOLS"
 
@@ -132,7 +136,7 @@ if [ -n "$SYMBOLS" ]; then
             prev = current
         }
     }
-    END { if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
+    END { if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE" > "$OUTPUT_FILE"
 else
     # Fast mode: use objdump labels (no debug symbols needed)
     riscv64-elf-objdump --demangle -d "$PROD_ELF" > "$DUMP_FILE"
@@ -167,5 +171,10 @@ else
             prev = current
         }
     }
-    END { if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE"
+    END { if (skipped > 0 && prev ~ /<mem(cpy|set)>:/) print "  ..." }' "$DUMP_FILE" "$JUMPS_FILE" > "$OUTPUT_FILE"
 fi
+
+echo ""
+echo "Stack trace saved to: $OUTPUT_FILE"
+echo "Trace steps: $(wc -l < "$TRACE_FILE")"
+echo "Jumps analyzed: $(wc -l < "$JUMPS_FILE")"
