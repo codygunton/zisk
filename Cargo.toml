@@ -49,6 +49,11 @@ members = [
     "sdk",
     "ziskbuild",
 ]
+exclude = [
+    "zksync-os",
+    "zisk-eth-client",
+    "zisk-testvectors",
+]
 
 resolver = "2"
 

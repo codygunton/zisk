@@ -1,0 +1,6 @@
+[submodule "zksync-airbender"]
+	path = zksync-airbender
+	url = ./zksync-airbender
+[submodule "zksync-os"]
+	path = zksync-os
+	url = ./zksync-os
