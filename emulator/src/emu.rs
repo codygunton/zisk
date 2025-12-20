@@ -8,7 +8,7 @@ use crate::{
 /// Cached check for ZISK_QUIET env var (suppresses per-step logging)
 fn is_quiet() -> bool {
     static QUIET: OnceLock<bool> = OnceLock::new();
-    *QUIET.get_or_init(|| std::env::var("ZISK_QUIET").is_ok())
+    *QUIET.get_or_init(|| std::env::var("ZISK_QUIET").map(|v| v == "1").unwrap_or(false))
 }
 use fields::PrimeField64;
 use mem_common::MemHelpers;
@@ -1573,6 +1573,9 @@ impl<'a> Emu<'a> {
             self.ctx.inst_ctx.mem.enable_blake2_delegation();
         }
 
+        // Set UART output mode
+        self.ctx.inst_ctx.mem.set_uart_mode(options.uart_mode());
+
         let mut elf = ElfSymbolReader::new();
         if options.read_symbols {
             if let Some(elf_file) = &options.elf {
@@ -1764,6 +1767,9 @@ impl<'a> Emu<'a> {
                 self.ctx.stats.flush_op_data_to_file(store_op_output_file).unwrap();
             }
         }
+
+        // Flush any buffered UART output
+        self.ctx.inst_ctx.mem.flush_uart();
     }
 
     /// Run the whole program
@@ -1793,6 +1799,9 @@ impl<'a> Emu<'a> {
             // Enable Blake2 delegation when oracle is active (for zksync-os proving)
             self.ctx.inst_ctx.mem.enable_blake2_delegation();
         }
+
+        // Set UART output mode
+        self.ctx.inst_ctx.mem.set_uart_mode(options.uart_mode());
 
         // Init pc to the rom entry address
         self.ctx.trace.start_state.pc = ROM_ENTRY;
@@ -1890,6 +1899,9 @@ impl<'a> Emu<'a> {
                 panic!("Emu::run_gen_trace() reached max_steps");
             }
         }
+
+        // Flush any buffered UART output
+        self.ctx.inst_ctx.mem.flush_uart();
 
         emu_traces
     }

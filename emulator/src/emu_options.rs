@@ -2,7 +2,7 @@
 
 use clap::Parser;
 use std::fmt;
-use zisk_core::DEFAULT_MAX_STEPS_STR;
+use zisk_core::{UartMode, DEFAULT_MAX_STEPS_STR};
 
 pub const ZISK_VERSION_MESSAGE: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -89,6 +89,10 @@ pub struct EmuOptions {
     /// When enabled, oracle queries are handled by the built-in oracle system.
     #[clap(long, value_name = "ORACLE", default_value = "false")]
     pub oracle: bool,
+    /// UART output mode: silent, stdout (default), or stderr.
+    /// stderr mode adds "[GUEST] " prefix and line-buffers for cleaner output.
+    #[clap(long, value_name = "UART", default_value = "stdout")]
+    pub uart: String,
 }
 
 impl Default for EmuOptions {
@@ -117,6 +121,7 @@ impl Default for EmuOptions {
             top_roi_detail: false,
             legacy_stats: false,
             oracle: false,
+            uart: "stdout".to_string(),
         }
     }
 }
@@ -145,6 +150,7 @@ impl fmt::Display for EmuOptions {
         writeln!(f, "ROI_CALLERS: {:?}", self.roi_callers)?;
         writeln!(f, "TOP_ROI_DETAIL: {:?}", self.top_roi_detail)?;
         writeln!(f, "ORACLE: {:?}", self.oracle)?;
+        writeln!(f, "UART: {:?}", self.uart)?;
         Ok(())
     }
 }
@@ -161,5 +167,20 @@ impl EmuOptions {
             && !self.stats
             && !self.generate_minimal_traces
             && !self.log_output
+    }
+
+    /// Get the UART mode from the string option.
+    ///
+    /// Supported values: "silent", "stdout", "stderr"
+    pub fn uart_mode(&self) -> UartMode {
+        match self.uart.as_str() {
+            "silent" => UartMode::Silent,
+            "stdout" => UartMode::Stdout,
+            "stderr" => UartMode::Stderr,
+            _ => {
+                eprintln!("Warning: Unknown UART mode '{}', using stdout", self.uart);
+                UartMode::Stdout
+            }
+        }
     }
 }

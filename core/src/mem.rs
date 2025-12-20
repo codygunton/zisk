@@ -121,6 +121,23 @@ pub enum OracleOp {
 /// Callback for oracle CSR reads/writes.
 pub type OracleCallback = Arc<Mutex<dyn FnMut(OracleOp) -> u64 + Send>>;
 
+/// Callback for UART output bytes.
+pub type UartCallback = Arc<Mutex<dyn FnMut(u8) + Send>>;
+
+/// UART output mode configuration.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum UartMode {
+    /// Silent - discard UART output
+    Silent,
+    /// Print to stdout (original behavior)
+    #[default]
+    Stdout,
+    /// Print to stderr with optional prefix
+    Stderr,
+    /// Use custom callback
+    Callback,
+}
+
 /// Fist input data memory address
 pub const INPUT_ADDR: u64 = 0x90000000;
 /// Maximum size of the input data
@@ -225,6 +242,12 @@ pub struct Mem {
     pub oracle_callback: Option<OracleCallback>,
     /// Enable Blake2s CSR 0x7c7 delegation (for zksync-os proving)
     pub blake2_enabled: bool,
+    /// UART output mode
+    pub uart_mode: UartMode,
+    /// Optional UART callback for custom output handling
+    pub uart_callback: Option<UartCallback>,
+    /// UART line buffer for line-buffered output
+    uart_line_buffer: String,
 }
 
 impl Default for Mem {
@@ -241,6 +264,8 @@ impl fmt::Debug for Mem {
             .field("free_input", &self.free_input)
             .field("oracle_callback", &self.oracle_callback.as_ref().map(|_| "<callback>"))
             .field("blake2_enabled", &self.blake2_enabled)
+            .field("uart_mode", &self.uart_mode)
+            .field("uart_callback", &self.uart_callback.as_ref().map(|_| "<callback>"))
             .finish()
     }
 }
@@ -254,6 +279,9 @@ impl Mem {
             free_input: 0,
             oracle_callback: None,
             blake2_enabled: false,
+            uart_mode: UartMode::default(),
+            uart_callback: None,
+            uart_line_buffer: String::new(),
         }
     }
 
@@ -265,6 +293,61 @@ impl Mem {
     /// Enable Blake2s CSR 0x7c7 delegation (for zksync-os proving)
     pub fn enable_blake2_delegation(&mut self) {
         self.blake2_enabled = true;
+    }
+
+    /// Set the UART output mode.
+    ///
+    /// Available modes:
+    /// - `UartMode::Silent`: Discard all UART output
+    /// - `UartMode::Stdout`: Print to stdout (default, original behavior)
+    /// - `UartMode::Stderr`: Print to stderr with "[GUEST] " prefix, line-buffered
+    /// - `UartMode::Callback`: Use a custom callback function
+    pub fn set_uart_mode(&mut self, mode: UartMode) {
+        self.uart_mode = mode;
+    }
+
+    /// Set a custom UART callback for handling output bytes.
+    ///
+    /// This also sets the UART mode to `UartMode::Callback`.
+    pub fn set_uart_callback(&mut self, callback: UartCallback) {
+        self.uart_callback = Some(callback);
+        self.uart_mode = UartMode::Callback;
+    }
+
+    /// Handle a UART output byte according to the current mode.
+    fn handle_uart_byte(&mut self, byte: u8) {
+        match self.uart_mode {
+            UartMode::Silent => {}
+            UartMode::Stdout => {
+                print!("{}", byte as char);
+            }
+            UartMode::Stderr => {
+                // Line-buffered output to stderr with prefix
+                if byte == b'\n' {
+                    let line = std::mem::take(&mut self.uart_line_buffer);
+                    eprintln!("[GUEST] {}", line);
+                } else if byte != b'\r' {
+                    self.uart_line_buffer.push(byte as char);
+                }
+            }
+            UartMode::Callback => {
+                if let Some(callback) = &self.uart_callback {
+                    if let Ok(mut cb) = callback.lock() {
+                        cb(byte);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Flush any buffered UART output.
+    ///
+    /// Call this when execution ends to ensure partial lines are printed.
+    pub fn flush_uart(&mut self) {
+        if self.uart_mode == UartMode::Stderr && !self.uart_line_buffer.is_empty() {
+            let line = std::mem::take(&mut self.uart_line_buffer);
+            eprintln!("[GUEST] {}", line);
+        }
     }
 
     /// Adds a read section to the memory structure
@@ -615,9 +698,9 @@ impl Mem {
         // Call write_silent to perform the real work
         self.write_silent(addr, val, width);
 
-        // Log to console bytes written to UART address
+        // Handle UART output (memory-mapped at UART_ADDR)
         if (addr == UART_ADDR) && (width == 1) {
-            print!("{}", String::from(val as u8 as char));
+            self.handle_uart_byte(val as u8);
         }
 
         // Handle CSR 0x7c0 (ORACLE_IO) writes via oracle callback
