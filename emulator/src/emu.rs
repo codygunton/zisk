@@ -1473,7 +1473,18 @@ impl<'a> Emu<'a> {
     /// Run the whole program, fast
     #[inline(always)]
     pub fn run_fast(&mut self, options: &EmuOptions) {
+        // Track previous PC to detect spin loops (e.g., zksync-os exit)
+        let mut prev_pc: u64 = 0;
+
         while !self.ctx.inst_ctx.end && (self.ctx.inst_ctx.step < options.max_steps) {
+            // Detect any self-loop (pc == prev_pc means jump to self)
+            // This is used by zksync-os to signal completion (both success and error)
+            if self.ctx.inst_ctx.pc == prev_pc {
+                self.ctx.inst_ctx.end = true;
+                break;
+            }
+            prev_pc = self.ctx.inst_ctx.pc;
+
             self.step_fast();
         }
 
