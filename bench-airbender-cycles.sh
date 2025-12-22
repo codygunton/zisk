@@ -24,10 +24,11 @@ echo ""
 > /tmp/airbender-bench.log
 
 # Build the Airbender binary (output to log)
+# Enable print_debug_info to see UART output from the guest
 echo "Building Airbender binary..."
 {
     cd "$ZKSYNCOS_DIR/zksync_os"
-    ./build.sh --machine airbender
+    FEATURES="proving,eth_runner,print_debug_info" ./build.sh --machine airbender
     cd "$REPO_ROOT"
 } >> /tmp/airbender-bench.log 2>&1
 
@@ -62,4 +63,4 @@ echo "Log: /tmp/airbender-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles)" /tmp/airbender-bench.log || true
+grep -E "(UART:|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/airbender-bench.log || true

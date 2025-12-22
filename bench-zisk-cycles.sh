@@ -56,4 +56,4 @@ echo "Log: /tmp/zisk-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles)" /tmp/zisk-bench.log || true
+grep -E "(\[GUEST\]|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/zisk-bench.log || true

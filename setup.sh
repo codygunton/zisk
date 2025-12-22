@@ -22,10 +22,11 @@ LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH" \
     cargo build --bin ziskemu --release
 
 # Build zksync-os for ZisK
+# Enable print_debug_info to see UART output from the guest
 echo ""
 echo "=== Building zksync-os for Zisk ==="
 cd "$ZKSYNCOS_DIR/zksync_os"
-./build.sh --machine zisk
+FEATURES="proving,eth_runner,print_debug_info" ./build.sh --machine zisk
 cd "$REPO_ROOT"
 
 # ROM setup
