@@ -605,3 +605,8 @@ cd /home/cody/zksync-os/tests/instances/eth_runner && \
   execution diverges AFTER receiving correct data, suggesting the issue is in the guest
   binary's execution logic rather than the data transfer.
 
+
+s diverges:
+< [GUEST] [ecrecover_inner] INPUT: digest=0xb8673d4511038ec53d492d25231c44f09ca61788333a86fde3c0e6a5179b2803, r=0x2b6a9d13f7f15919fc611536779bd8cb8a31d548ed1d215cbc2feb196b8ea7f0, s=0x2bc617372f0faf34672f539ecd23aee70a2891ba890714825b1a9fa6814e666c, rec_id=00
+---
+> [GUEST] [ecrecover_inner] INPUT: digest=0xb8673d4511038ec53d492d25231c44f09ca61788333a86fde3c0e6a5179b2803, r=0x2b6a9d13f7f15919fc611536779bd8cbff31d548ed1d215cbc2feb196b8ea7f0, s=0xffc617372f0faf34672f539eff23aee7ff2891ba890714825b1a9fa6814e666c, rec_id=00
