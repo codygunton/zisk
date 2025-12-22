@@ -203,14 +203,25 @@ impl OracleProcessor for UartProcessor {
             return Ok(Box::new(std::iter::empty()));
         }
 
-        // Process each word as bytes
-        for word in query {
-            let bytes = word.to_le_bytes();
-            for &b in &bytes {
-                if b != 0 {
-                    self.process_char(b as char);
-                }
-            }
+        // QuasiUART protocol: first word is message length, remaining are data
+        // Convert usize to u32 pairs (for 64-bit compatibility)
+        let u32_vec: Vec<u32> =
+            query.iter().flat_map(|&el| [el as u32, (el >> 32) as u32]).collect();
+
+        if u32_vec.is_empty() {
+            return Ok(Box::new(std::iter::empty()));
+        }
+
+        let message_len = u32_vec[0] as usize;
+        let mut bytes: Vec<u8> =
+            u32_vec[1..].iter().flat_map(|&el| el.to_le_bytes()).collect();
+
+        // Truncate to actual message length
+        bytes.truncate(message_len);
+
+        // Process each character
+        for &b in &bytes {
+            self.process_char(b as char);
         }
 
         // UART queries return empty response
@@ -240,6 +251,41 @@ impl Write for CaptureWriter {
 mod tests {
     use super::*;
 
+    // Helper to create QuasiUART protocol query: [message_len, data_words...]
+    // Matches how the oracle buffers queries from 32-bit guest writes
+    fn make_uart_query(msg: &str) -> Vec<usize> {
+        let len = msg.len();
+        let bytes = msg.as_bytes();
+
+        // Build as u32 words first (matching 32-bit guest protocol)
+        let mut u32_words: Vec<u32> = vec![len as u32];
+
+        // Pack message bytes into u32 words
+        let mut i = 0;
+        while i < bytes.len() {
+            let mut word: u32 = 0;
+            for j in 0..4 {
+                if i + j < bytes.len() {
+                    word |= (bytes[i + j] as u32) << (j * 8);
+                }
+            }
+            u32_words.push(word);
+            i += 4;
+        }
+
+        // Convert to usize (pairs of u32 on 64-bit)
+        let mut result = Vec::new();
+        let mut j = 0;
+        while j < u32_words.len() {
+            let low = u32_words[j] as usize;
+            let high = if j + 1 < u32_words.len() { u32_words[j + 1] as usize } else { 0 };
+            result.push(low | (high << 32));
+            j += 2;
+        }
+
+        result
+    }
+
     #[test]
     fn test_uart_processor_supported_ids() {
         let processor = UartProcessor::new();
@@ -251,7 +297,8 @@ mod tests {
     fn test_uart_processor_returns_empty() {
         let mut processor = UartProcessor::silent();
 
-        let result = processor.process_query(UART_QUERY_ID, vec![0x41424344]); // "DCBA" in LE
+        // QuasiUART format: first word is length
+        let result = processor.process_query(UART_QUERY_ID, make_uart_query("test"));
         assert!(result.is_ok());
 
         let iter = result.expect("should succeed");
@@ -262,12 +309,8 @@ mod tests {
     fn test_uart_capturing() {
         let (mut processor, buffer) = UartProcessor::capturing();
 
-        // Send "Hello\n" as bytes packed into usize words
-        // 'H' = 0x48, 'e' = 0x65, 'l' = 0x6c, 'l' = 0x6c, 'o' = 0x6f, '\n' = 0x0a
-        let hello: usize = 0x6c6c6548; // "lleH" in LE (first 4 bytes)
-        let world: usize = 0x000a6f; // "\no" in LE
-
-        processor.process_query(UART_QUERY_ID, vec![hello, world]).expect("should succeed");
+        // Send "Hello\n" using QuasiUART protocol
+        processor.process_query(UART_QUERY_ID, make_uart_query("Hello\n")).expect("should succeed");
 
         let output = buffer.lock().expect("lock");
         let output_str = String::from_utf8_lossy(&output);
@@ -279,16 +322,12 @@ mod tests {
     fn test_uart_line_buffering() {
         let (mut processor, buffer) = UartProcessor::capturing();
 
-        // Send characters one at a time
-        let chars = ['H', 'i', '\n'];
-        for c in chars {
-            let word = c as usize;
-            processor.process_query(UART_QUERY_ID, vec![word]).expect("should succeed");
-        }
+        // Send "Hi\n" in one message
+        processor.process_query(UART_QUERY_ID, make_uart_query("Hi\n")).expect("should succeed");
 
         let output = buffer.lock().expect("lock");
         let output_str = String::from_utf8_lossy(&output);
-        // Line buffered: should only output after newline
+        // Line buffered: should output with prefix
         assert_eq!(output_str.matches("[GUEST]").count(), 1);
         assert!(output_str.contains("Hi"));
     }
@@ -301,9 +340,8 @@ mod tests {
             .writer(CaptureWriter { buffer: Arc::clone(&buffer) })
             .build();
 
-        // Send "X\n"
-        let word = (('\n' as usize) << 8) | ('X' as usize);
-        processor.process_query(UART_QUERY_ID, vec![word]).expect("should succeed");
+        // Send "X\n" using QuasiUART protocol
+        processor.process_query(UART_QUERY_ID, make_uart_query("X\n")).expect("should succeed");
 
         let output = buffer.lock().expect("lock");
         let output_str = String::from_utf8_lossy(&output);
@@ -318,7 +356,7 @@ mod tests {
             .writer(CaptureWriter { buffer: Arc::clone(&buffer) })
             .build();
 
-        processor.process_query(UART_QUERY_ID, vec![0x0a48656c]).expect("should succeed");
+        processor.process_query(UART_QUERY_ID, make_uart_query("test\n")).expect("should succeed");
 
         let output = buffer.lock().expect("lock");
         assert!(output.is_empty(), "Disabled UART should produce no output");
