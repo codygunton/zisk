@@ -52,7 +52,7 @@ ln -sf zksync_os_airbender.elf "$ZKSYNCOS_DIR/zksync_os/evm_replay.elf"
 echo "Running eth_runner..."
 cd "$ETH_RUNNER_DIR"
 export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
-export VERBOSE_ORACLE=1
+# export VERBOSE_ORACLE=1  # Uncomment to see detailed oracle query logs
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features "rig/no_print,rig/unlimited_native" \
     -- single-run --block-dir "$BLOCK_DIR" >> /tmp/airbender-bench.log 2>&1
@@ -63,4 +63,4 @@ echo "Log: /tmp/airbender-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(UART:|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/airbender-bench.log || true
+grep -E "(\[GUEST\]|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/airbender-bench.log || true
