@@ -868,9 +868,13 @@ impl Riscv2ZiskContext<'_> {
     pub fn jalr(&mut self, i: &RiscvInstruction, inst_size: u64) {
         assert!(inst_size == 4 || inst_size == 2);
         let mut rom_address = i.rom_address;
+        // Per RISC-V spec: JALR clears only bit 0 of the target address (0xfffffffffffffffe),
+        // not bits 0 and 1. This allows jumping to 2-byte aligned targets when the C extension
+        // is enabled.
+        const JALR_MASK: u64 = 0xfffffffffffffffe; // Clear only bit 0
         if (i.imm % 4) == 0 {
             let mut zib = ZiskInstBuilder::new_from_riscv(rom_address, i.inst.clone());
-            zib.src_a("imm", 0xfffffffffffffffc, false);
+            zib.src_a("imm", JALR_MASK, false);
             zib.src_b("reg", i.rs1 as u64, false);
             zib.op("and").unwrap();
             zib.set_pc();
@@ -893,7 +897,7 @@ impl Riscv2ZiskContext<'_> {
             }
             {
                 let mut zib = ZiskInstBuilder::new(rom_address);
-                zib.src_a("imm", 0xfffffffffffffffc, false);
+                zib.src_a("imm", JALR_MASK, false);
                 zib.src_b("lastc", 0, false);
                 zib.op("and").unwrap();
                 zib.set_pc();

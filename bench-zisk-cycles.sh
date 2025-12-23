@@ -44,8 +44,8 @@ echo "Running eth_runner..."
 cd "$ETH_RUNNER_DIR"
 export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 export LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH"
-# export VERBOSE_ORACLE=1  # Uncomment to see detailed oracle query logs
-export ZISK_QUIET=1
+export VERBOSE_ORACLE=1  # Uncomment to see detailed oracle query logs
+# export ZISK_QUIET=1  # Uncomment to suppress zisk output
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features "rig/zisk-witness,rig/no_print,rig/unlimited_native" \
     -- single-run --block-dir "$BLOCK_DIR" --randomized >> /tmp/zisk-bench.log 2>&1
@@ -56,4 +56,4 @@ echo "Log: /tmp/zisk-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(\[GUEST\]|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/zisk-bench.log || true
+grep -E "(\[GUEST\]|process_rom\(\) steps|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/zisk-bench.log || true

@@ -1480,6 +1480,19 @@ impl<'a> Emu<'a> {
             // Detect any self-loop (pc == prev_pc means jump to self)
             // This is used by zksync-os to signal completion (both success and error)
             if self.ctx.inst_ctx.pc == prev_pc {
+                let inst = self.rom.get_instruction(self.ctx.inst_ctx.pc);
+                eprintln!(
+                    "[ZISK] Exit at PC=0x{:x} step={} (self-loop detected)",
+                    self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
+                );
+                eprintln!(
+                    "[ZISK] Instruction: op={} set_pc={} jmp1={} jmp2={} verbose={}",
+                    inst.op_str, inst.set_pc, inst.jmp_offset1, inst.jmp_offset2, inst.verbose
+                );
+                eprintln!(
+                    "[ZISK] Registers: ra=0x{:x} sp=0x{:x} c=0x{:x}",
+                    self.ctx.inst_ctx.regs[1], self.ctx.inst_ctx.sp, self.ctx.inst_ctx.c
+                );
                 self.ctx.inst_ctx.end = true;
                 break;
             }

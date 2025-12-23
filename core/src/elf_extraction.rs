@@ -78,11 +78,15 @@ pub fn collect_elf_payload_from_bytes(file_data: &[u8]) -> Result<ElfPayload, Bo
             }
 
             // Handle different section types
+            let is_exec = (sh.sh_flags & SHF_EXECINSTR as u64) != 0;
+
             let data = if sh.sh_type == SHT_PROGBITS {
                 let (raw, _) = elf.section_data(&sh)?;
                 let mut data = raw.to_vec();
-                // Word-align by trimming
-                while data.len() % 4 != 0 {
+                // For executable sections, only ensure 2-byte alignment (C extension uses 16-bit instructions)
+                // For data sections, align to 4 bytes
+                let alignment = if is_exec { 2 } else { 4 };
+                while data.len() % alignment != 0 {
                     data.pop();
                 }
                 data
@@ -98,8 +102,7 @@ pub fn collect_elf_payload_from_bytes(file_data: &[u8]) -> Result<ElfPayload, Bo
                 continue;
             };
 
-            // Categorize the section based on its flags
-            let is_exec = (sh.sh_flags & SHF_EXECINSTR as u64) != 0;
+            // Categorize the section based on its flags (is_exec already computed above)
             let is_write = (sh.sh_flags & SHF_WRITE as u64) != 0;
             let in_ram =
                 sh.sh_addr >= RAM_START_ADDR && sh.sh_addr + data.len() as u64 <= RAM_END_ADDR;
