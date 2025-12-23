@@ -12,4 +12,7 @@ and/or
 and sometimes
 zksync-os/zksync_os/zksync_os_zisk.dump
 
+We can track progress by running list-txs.sh with flags to count the number of transactions that don't revert.
+
 You are running on a capable machine and you should make use of parallelism freely.
+

@@ -629,3 +629,43 @@ s diverges:
   2. Slice metadata (ptr/len) corruption
   3. Compiler optimization issue with the slice reference
   4. The bytes we log via volatile reads differ from what update() actually sees
+
+
+
+This is in airbender:
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+pub unsafe fn spec_memcopy_u32_nonoverlapping(
+    mut src: *const u32,
+    mut dst: *mut u32,
+    count: usize,
+) {
+    core::hint::assert_unchecked(src.addr() % 4 == 0);
+    core::hint::assert_unchecked(dst.addr() % 4 == 0);
+    let end = dst.add(count);
+    while dst < end {
+        // this prevents LLVM to insert memcpy, but fine for our purposes
+        dst.write_volatile(src.read());
+        dst = dst.add(1);
+        src = src.add(1);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+● Found the same bug pattern in legacy_tx.rs:
+
+  Lines 172 and 196:
+  hasher.update(inner_slice);
+
+  This is the exact same issue as EIP-2718 - passing inner_slice (pointing to oracle/input buffer memory) directly to hasher.update().
+
+  The common root cause is confirmed: passing slices from input buffer memory directly to the hasher fails on ZisK. The workaround that worked for EIP-2718 should work here too.
