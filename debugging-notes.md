@@ -610,3 +610,22 @@ s diverges:
 < [GUEST] [ecrecover_inner] INPUT: digest=0xb8673d4511038ec53d492d25231c44f09ca61788333a86fde3c0e6a5179b2803, r=0x2b6a9d13f7f15919fc611536779bd8cb8a31d548ed1d215cbc2feb196b8ea7f0, s=0x2bc617372f0faf34672f539ecd23aee70a2891ba890714825b1a9fa6814e666c, rec_id=00
 ---
 > [GUEST] [ecrecover_inner] INPUT: digest=0xb8673d4511038ec53d492d25231c44f09ca61788333a86fde3c0e6a5179b2803, r=0x2b6a9d13f7f15919fc611536779bd8cbff31d548ed1d215cbc2feb196b8ea7f0, s=0xffc617372f0faf34672f539eff23aee7ff2891ba890714825b1a9fa6814e666c, rec_id=00
+
+
+
+  Key Finding: The keccak implementation itself is correct on both architectures!
+
+  | Test                               | Airbender        | ZisK             | Match |
+  |------------------------------------|------------------|------------------|-------|
+  | Empty hash                         | c5d2460186f7233c | c5d2460186f7233c | ✅    |
+  | Hardcoded 49 bytes (single update) | d52a22f1ac8c9c13 | d52a22f1ac8c9c13 | ✅    |
+  | Hardcoded 49 bytes (three updates) | d52a22f1ac8c9c13 | d52a22f1ac8c9c13 | ✅    |
+  | Actual TX#1 inner_slice            | d52a22f1...      | ad046886...      | ❌    |
+
+  Conclusion: When we hash a hardcoded [u8; 49] array with identical bytes, both architectures produce the correct, matching hash. But when we hash inner_slice (parsed from RLP), ZisK produces a wrong result even though our volatile-read logging shows identical bytes.
+
+  The bug is NOT in keccak. The bug is in how inner_slice is being passed to or read by hasher.update() on ZisK. Possibilities:
+  1. Memory alignment affecting slice reads
+  2. Slice metadata (ptr/len) corruption
+  3. Compiler optimization issue with the slice reference
+  4. The bytes we log via volatile reads differ from what update() actually sees
