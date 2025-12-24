@@ -247,18 +247,26 @@ This prevents all the transformations that trigger the bug.
 | (session) | copy_returndata_to_heap volatile | 103 |
 | (session) | const_keccak256 buffer volatile ops | 103 |
 | (session) | **Keccak256 system function: use MiniDigest instead of Digest** | **126** ✓ |
+| (session) | **RLP encoding: use MiniDigest instead of Digest for block hash** | **126** ✓✓ |
 
-**Current status: RESOLVED**
+**Current status: FULLY RESOLVED**
 - ZisK: 126/126 transactions match Airbender
-- Airbender: 126/126 transactions (69 expected reverts)
-- **Both platforms now produce identical results**
+- Airbender: 126/126 transactions (22 expected reverts)
+- **Both platforms now produce identical final outputs** (state, pubdata, batch PI hash)
 
-The TX#76 `BadPool()` error was caused by SHA3 hashing uninitialized memory:
-- SHA3 hashed memory[0x95:0xF5] (96 bytes)
-- Only 11 bytes were explicitly written; 85 bytes should be zeros from heap resize
-- The keccak256 system function used `Digest` trait directly, bypassing `MiniDigest` volatile workaround
-- Switching to `MiniDigest::digest()` ensured volatile reads of the input data
-- This fixed the hash mismatch that caused incorrect pool address computation
+### Key Fixes Summary
+
+1. **TX#76 `BadPool()` error** was caused by SHA3 hashing uninitialized memory:
+   - SHA3 hashed memory[0x95:0xF5] (96 bytes)
+   - Only 11 bytes were explicitly written; 85 bytes should be zeros from heap resize
+   - The keccak256 system function used `Digest` trait directly, bypassing `MiniDigest` volatile workaround
+   - Switching to `MiniDigest::digest()` ensured volatile reads of the input data
+
+2. **Final output discrepancy** was caused by RLP encoding using wrong trait:
+   - RLP functions used `impl Digest` which bypassed `MiniDigest` volatile workarounds
+   - Block hash computation (Keccak256 over RLP-encoded header) produced different results
+   - This caused `last_256_block_hashes_blake`, `pubdata_commitment`, and final batch hash to differ
+   - Switching RLP functions to use `impl MiniDigest` fixed the final discrepancy
 
 ### 7. Blake2s256 Implementation (delegated_extended and naive)
 
@@ -407,3 +415,30 @@ self.state.words[word] ^= self.buffer.buffer[word];
 let buf_word = unsafe { core::ptr::read_volatile(&self.buffer.buffer[word]) };
 self.state.words[word] ^= buf_word;
 ```
+
+### 12. RLP Encoding Functions for Block Hash
+
+**File:** `basic_bootloader/src/bootloader/rlp.rs`
+
+**Problem:** The RLP encoding functions used `impl Digest` trait for the hasher parameter, which meant calls like `hasher.update(value)` went through the `sha3::Digest` trait directly instead of through `MiniDigest`, bypassing the volatile read workarounds.
+
+This caused the block hash (computed via RLP-encoded Keccak256) to differ between Zisk and Airbender, leading to:
+- Different `last_256_block_hashes_blake` (rolling hash of block hashes)
+- Different `pubdata_commitment`
+- Different final batch public input hash
+
+```rust
+// BROKEN - uses Digest trait directly
+use crypto::sha3::Digest;
+pub fn apply_bytes_encoding_to_hash(value: &[u8], hasher: &mut impl Digest) {
+    hasher.update(value);  // Calls sha3::Digest::update, not MiniDigest::update
+}
+
+// FIXED - uses MiniDigest trait with volatile workarounds
+use crypto::MiniDigest;
+pub fn apply_bytes_encoding_to_hash(value: &[u8], hasher: &mut impl MiniDigest) {
+    hasher.update(value);  // Now calls MiniDigest::update with volatile reads
+}
+```
+
+**Impact:** This was the **final fix** that made Zisk and Airbender produce identical outputs.
