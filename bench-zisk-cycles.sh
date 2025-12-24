@@ -48,7 +48,7 @@ export VERBOSE_ORACLE=1  # Uncomment to see detailed oracle query logs
 # export ZISK_QUIET=1  # Uncomment to suppress zisk output
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features "rig/zisk-witness,rig/no_print,rig/unlimited_native" \
-    -- single-run --block-dir "$BLOCK_DIR" --randomized >> /tmp/zisk-bench.log 2>&1
+    -- single-run --block-dir "$BLOCK_DIR" >> /tmp/zisk-bench.log 2>&1
 cd "$REPO_ROOT"
 
 echo ""
