@@ -242,19 +242,23 @@ This prevents all the transformations that trigger the bug.
 | (session) | Volatile reads/writes in copy_and_zeropad_nonoverlapping | 99 |
 | (session) | Volatile reads + byte-by-byte updates in Keccak256 MiniDigest | 103 |
 | (session) | Volatile reads/writes in Blake2s256 (delegated + naive) | 103 (state changed) |
+| (session) | EVM heap ops volatile (MLOAD, MSTORE, MCOPY, CALLDATALOAD) | 103 |
+| (session) | SliceVec::resize() volatile zero-fill | 103 |
+| (session) | copy_returndata_to_heap volatile | 103 |
+| (session) | const_keccak256 buffer volatile ops | 103 |
+| (session) | **Keccak256 system function: use MiniDigest instead of Digest** | **126** ✓ |
 
-**Current status:**
-- ZisK: 103/126 transactions pass (23 revert)
-- Airbender: 104/126 transactions pass (22 revert)
-- **Only TX#76 diverges** between platforms (reverts on ZisK but not Airbender)
+**Current status: RESOLVED**
+- ZisK: 126/126 transactions match Airbender
+- Airbender: 126/126 transactions (69 expected reverts)
+- **Both platforms now produce identical results**
 
-The remaining TX#76 divergence occurs during a 1inch/Uniswap V3 swap:
-- Both platforms execute identically until getting pool fee (0xbb8 = 3000)
-- On ZisK: 36 instructions executed, then `EvmError(Revert)` with error `b2c02722`
-- On Airbender: 72 instructions executed, external call made successfully
-- The ecrecover operations during TX#76 produce correct, matching results
-- **Oracle queries are identical** between both platforms for TX#76
-- Investigation ongoing to find the remaining data corruption source
+The TX#76 `BadPool()` error was caused by SHA3 hashing uninitialized memory:
+- SHA3 hashed memory[0x95:0xF5] (96 bytes)
+- Only 11 bytes were explicitly written; 85 bytes should be zeros from heap resize
+- The keccak256 system function used `Digest` trait directly, bypassing `MiniDigest` volatile workaround
+- Switching to `MiniDigest::digest()` ensured volatile reads of the input data
+- This fixed the hash mismatch that caused incorrect pool address computation
 
 ### 7. Blake2s256 Implementation (delegated_extended and naive)
 
@@ -288,3 +292,118 @@ for i in 0..slice.len() {
 ```
 
 **Note:** Blake2s256 is used for flat storage key derivation. The fix changed the state computation but did not resolve TX#76.
+
+### 8. Keccak256 System Function (The Final TX#76 Fix)
+
+**File:** `basic_system/src/system_functions/keccak256.rs`
+
+**Problem:** The `keccak256_as_system_function_inner` function used the `Digest` trait directly from the `sha3` crate, bypassing the `MiniDigest` trait implementation that contained volatile read workarounds.
+
+The `crypto/src/sha3/mod.rs` already had a working `MiniDigest` implementation with volatile reads:
+```rust
+// crypto/src/sha3/mod.rs - MiniDigest::update already had volatile workaround
+fn update(&mut self, input: impl AsRef<[u8]>) {
+    let slice = input.as_ref();
+    for i in 0..slice.len() {
+        let byte = unsafe { core::ptr::read_volatile(&slice[i]) };
+        <Keccak256 as Digest>::update(self, &[byte]);
+    }
+}
+```
+
+But the keccak256 system function was bypassing this by using `Digest` directly:
+
+```rust
+// BROKEN - uses Digest trait, bypassing volatile workaround
+use crypto::sha3::*;
+use sha3::Digest;
+let mut hasher = Keccak256::new();
+hasher.update(src);  // Uses Digest::update, not MiniDigest::update
+let hash = hasher.finalize();
+
+// FIXED - uses MiniDigest::digest() which has volatile reads
+use crypto::MiniDigest;
+let hash = crypto::sha3::Keccak256::digest(src);
+```
+
+**Root Cause of TX#76 `BadPool()` Error:**
+1. SHA3 computed a hash of memory at [0x95:0xF5] (96 bytes)
+2. Only 11 bytes were explicitly written via MSTORE
+3. The remaining 85 bytes should be zeros from `SliceVec::resize()`
+4. Due to the compiler optimization bug, those zeros weren't properly readable
+5. The non-volatile `Digest::update()` read incorrect (uninitialized) memory
+6. Wrong hash → computed pool address mismatch → `BadPool()` error (selector `b2c02722`)
+
+**Impact:** This was the **key fix** that resolved TX#76, bringing Zisk revert count from 82 down to 69 (matching Airbender).
+
+### 9. SliceVec Heap Resize Zero-Fill
+
+**File:** `zk_ee/src/memory/slice_vec.rs`
+
+**Problem:** The `resize()` function's zero-fill for newly allocated memory didn't use volatile writes, so the zeros could be optimized away and not readable later.
+
+```rust
+// BROKEN - zeros may not be written/readable
+for x in &mut self.memory[self.length..new_length] {
+    *x = padding.clone();
+}
+
+// FIXED - volatile writes ensure zeros are actually written
+for x in &mut self.memory[self.length..new_length] {
+    unsafe {
+        let ptr = x.as_mut_ptr();
+        core::ptr::write_volatile(ptr, padding.clone());
+    }
+}
+```
+
+### 10. EVM Interpreter Memory Operations
+
+**Files:**
+- `evm_interpreter/src/interpreter.rs` - `copy_returndata_to_heap()`
+- `evm_interpreter/src/instructions/heap.rs` - `mload()`, `mstore()`, `mcopy()`
+- `evm_interpreter/src/instructions/system.rs` - `calldataload()`
+
+**Problem:** Direct memory reads/writes in EVM heap operations were being optimized incorrectly.
+
+```rust
+// CALLDATALOAD example (system.rs)
+// BROKEN
+bytes[..have_bytes].copy_from_slice(&self.calldata[index..index + have_bytes]);
+
+// FIXED - volatile reads and writes
+unsafe {
+    let src = self.calldata.as_ptr().add(index);
+    let dst = bytes.as_u8_array_mut().as_mut_ptr();
+    for i in 0..have_bytes {
+        let byte = core::ptr::read_volatile(src.add(i));
+        core::ptr::write_volatile(dst.add(i), byte);
+    }
+}
+```
+
+### 11. Const Keccak256 Buffer Operations
+
+**File:** `supporting_crates/keccak/src/lib.rs`
+
+**Problem:** The const keccak256 implementation's `append()` and `absorb_from_buffer()` functions used direct memory operations.
+
+```rust
+// append() - BROKEN
+core::ptr::copy_nonoverlapping(src, dst, len);
+
+// append() - FIXED
+let mut i = 0;
+while i < len {
+    let byte = core::ptr::read_volatile(src.add(i));
+    core::ptr::write_volatile(dst.add(i), byte);
+    i += 1;
+}
+
+// absorb_from_buffer() - BROKEN
+self.state.words[word] ^= self.buffer.buffer[word];
+
+// absorb_from_buffer() - FIXED
+let buf_word = unsafe { core::ptr::read_volatile(&self.buffer.buffer[word]) };
+self.state.words[word] ^= buf_word;
+```
