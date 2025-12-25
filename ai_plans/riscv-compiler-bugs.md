@@ -442,3 +442,75 @@ pub fn apply_bytes_encoding_to_hash(value: &[u8], hasher: &mut impl MiniDigest) 
 ```
 
 **Impact:** This was the **final fix** that made Zisk and Airbender produce identical outputs.
+
+## Common Pitfalls and Debugging Tips
+
+### Pitfall 1: Trait-Level Bypass of Volatile Workarounds
+
+A common pattern that causes bugs:
+
+```rust
+// You have a trait with volatile workarounds
+impl MiniDigest for Keccak256 {
+    fn update(&mut self, input: impl AsRef<[u8]>) {
+        // Uses volatile reads - CORRECT
+        for i in 0..slice.len() {
+            let byte = unsafe { core::ptr::read_volatile(&slice[i]) };
+            <Keccak256 as Digest>::update(self, &[byte]);
+        }
+    }
+}
+
+// BUT if you accept `impl Digest` instead of `impl MiniDigest`:
+fn broken_function(hasher: &mut impl Digest) {
+    hasher.update(data);  // Calls sha3::Digest::update, NOT MiniDigest::update!
+}
+```
+
+**Rule:** Always use the trait that contains the volatile workarounds (`MiniDigest`), never the underlying trait (`Digest`).
+
+### Pitfall 2: Randomized vs Deterministic Benchmarks
+
+When comparing Zisk and Airbender outputs, ensure both use the same tree mode:
+
+- `--randomized` flag creates random tree positions, causing expected differences in `next_free_slot`
+- Without the flag, both use sequential positions, enabling true comparison
+
+The `--randomized` mode is useful for stress-testing but obscures real bugs when comparing platforms.
+
+### Pitfall 3: Multiple Implementations of Same Algorithm
+
+The codebase may have multiple implementations of the same algorithm:
+- `crypto/src/sha3/mod.rs` - re-exports `sha3` crate + adds `MiniDigest` wrapper
+- `supporting_crates/keccak/src/lib.rs` - const-compatible Keccak256
+
+Ensure ALL implementations have volatile fixes, not just one.
+
+### Debugging Workflow
+
+1. **Compare revert counts:** `./list-txs.sh /tmp/zisk-bench.log --revert -s`
+2. **Compare final outputs:** Look at `PI calculation:` lines in logs
+3. **Binary search for divergence:** If outputs differ, add logging to find first divergent value
+4. **Check trait usage:** When using hashers, verify the trait (`MiniDigest` vs `Digest`)
+5. **Check all code paths:** `#[cfg]` attributes may select different code for RV32 vs RV64
+
+### Files That Required Volatile Fixes (Complete List)
+
+| File | Function(s) |
+|------|-------------|
+| `basic_system/src/system_functions/ecrecover.rs` | Input buffer copy |
+| `basic_system/src/system_functions/keccak256.rs` | Use MiniDigest::digest() |
+| `basic_bootloader/src/bootloader/rlp.rs` | Use impl MiniDigest |
+| `basic_bootloader/src/bootloader/transaction/rlp_encoded/eip_2718_tx_envelope.rs` | Byte-by-byte hashing |
+| `basic_bootloader/src/bootloader/transaction/rlp_encoded/transaction_types/legacy_tx.rs` | Volatile copy + byte-by-byte |
+| `crypto/src/secp256k1/field/field_10x26.rs` | to_bytes() |
+| `crypto/src/secp256k1/field/field_5x52.rs` | to_bytes() |
+| `crypto/src/sha3/mod.rs` | MiniDigest::update/digest |
+| `crypto/src/blake2s/naive.rs` | MiniDigest::update/digest |
+| `crypto/src/blake2s/delegated_extended.rs` | spec_memcopy() |
+| `zk_ee/src/utils/convenience/memcopy.rs` | copy_and_zeropad_nonoverlapping() |
+| `zk_ee/src/memory/slice_vec.rs` | resize() zero-fill |
+| `evm_interpreter/src/interpreter.rs` | copy_returndata_to_heap() |
+| `evm_interpreter/src/instructions/heap.rs` | mload(), mstore(), mcopy() |
+| `evm_interpreter/src/instructions/system.rs` | calldataload() |
+| `supporting_crates/keccak/src/lib.rs` | append(), absorb_from_buffer() |
