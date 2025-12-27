@@ -109,6 +109,11 @@ pub const ORACLE_CSR_ADDR: u64 = 0xa000be00;
 /// Used for Blake2s round function delegation in zksync-os
 pub const BLAKE2_CSR_ADDR: u64 = 0xa000be38;
 
+/// CSR 0x7ca (U256_OPS_WITH_CONTROL) memory-mapped address
+/// Used for U256 arithmetic delegation in zksync-os
+/// Calculated as: 0xa0008000 + 0x7ca * 8 = 0xa000be50
+pub const U256_CSR_ADDR: u64 = 0xa000be50;
+
 /// Oracle operation type for CSR 0x7c0 reads/writes.
 #[derive(Debug, Clone, Copy)]
 pub enum OracleOp {
@@ -242,6 +247,8 @@ pub struct Mem {
     pub oracle_callback: Option<OracleCallback>,
     /// Enable Blake2s CSR 0x7c7 delegation (for zksync-os proving)
     pub blake2_enabled: bool,
+    /// Enable U256 CSR 0x7ca delegation (for zksync-os proving)
+    pub u256_enabled: bool,
     /// UART output mode
     pub uart_mode: UartMode,
     /// Optional UART callback for custom output handling
@@ -264,6 +271,7 @@ impl fmt::Debug for Mem {
             .field("free_input", &self.free_input)
             .field("oracle_callback", &self.oracle_callback.as_ref().map(|_| "<callback>"))
             .field("blake2_enabled", &self.blake2_enabled)
+            .field("u256_enabled", &self.u256_enabled)
             .field("uart_mode", &self.uart_mode)
             .field("uart_callback", &self.uart_callback.as_ref().map(|_| "<callback>"))
             .finish()
@@ -279,6 +287,7 @@ impl Mem {
             free_input: 0,
             oracle_callback: None,
             blake2_enabled: false,
+            u256_enabled: false,
             uart_mode: UartMode::default(),
             uart_callback: None,
             uart_line_buffer: String::new(),
@@ -293,6 +302,120 @@ impl Mem {
     /// Enable Blake2s CSR 0x7c7 delegation (for zksync-os proving)
     pub fn enable_blake2_delegation(&mut self) {
         self.blake2_enabled = true;
+    }
+
+    /// Enable U256 CSR 0x7ca delegation (for zksync-os proving)
+    pub fn enable_u256_delegation(&mut self) {
+        self.u256_enabled = true;
+    }
+
+    /// Check if a write address is the U256 CSR
+    #[inline]
+    pub fn is_u256_csr_write(&self, addr: u64) -> bool {
+        addr == U256_CSR_ADDR && self.u256_enabled
+    }
+
+    /// Handle U256 CSR 0x7ca delegation.
+    ///
+    /// Performs U256 arithmetic operations using the provided register values,
+    /// reading/writing operands from/to memory.
+    ///
+    /// # Protocol (matching airbender)
+    ///
+    /// - x10: pointer to operand A (read-write, 32 bytes, 8 x u32)
+    /// - x11: pointer to operand B (read-only, 32 bytes, 8 x u32)
+    /// - x12: control mask (input) / overflow flag (output)
+    ///
+    /// CRITICAL: Uses volatile reads/writes to avoid RV64 LLVM compiler bugs.
+    ///
+    /// # Arguments
+    ///
+    /// * `x10` - Pointer to operand A
+    /// * `x11` - Pointer to operand B
+    /// * `x12` - Control mask
+    /// * `regs` - Register file (for writing overflow flag to x12)
+    pub fn handle_u256_delegation(&mut self, x10: u64, x11: u64, x12: u32, regs: &mut [u64; 32]) {
+        use crate::u256::{execute_u256_op, u256_from_limbs, u256_to_limbs};
+
+        // Track U256 operations globally
+        static mut U256_OP_COUNT: u64 = 0;
+        static mut U256_FIRST_CALL: bool = true;
+
+        unsafe {
+            if U256_FIRST_CALL {
+                eprintln!("[U256-DELEGATION] First U256 CSR 0x7ca delegation call - U256 delegation is ACTIVE");
+                U256_FIRST_CALL = false;
+            }
+            U256_OP_COUNT += 1;
+        }
+
+        // Read operand A using volatile pattern (8 x u32 = 32 bytes)
+        let mut a_limbs = [0u32; 8];
+        for i in 0..8 {
+            let addr = x10 + (i * 4) as u64;
+            let value = self.read(addr, 4) as u32;
+            // Use volatile write to local to prevent optimization
+            unsafe {
+                core::ptr::write_volatile(&mut a_limbs[i], value);
+            }
+        }
+
+        // Read operand B using volatile pattern
+        let mut b_limbs = [0u32; 8];
+        for i in 0..8 {
+            let addr = x11 + (i * 4) as u64;
+            let value = self.read(addr, 4) as u32;
+            unsafe {
+                core::ptr::write_volatile(&mut b_limbs[i], value);
+            }
+        }
+
+        // Convert to U256 and execute operation
+        let a = u256_from_limbs(&a_limbs);
+        let b = u256_from_limbs(&b_limbs);
+        let control = (x12 & 0xFF) as u8;
+
+        // Debug first few operations
+        unsafe {
+            if U256_OP_COUNT <= 5 {
+                eprintln!(
+                    "[U256] #{} ctrl={:#04x} x10={:#x} x11={:#x} a={:?} b={:?}",
+                    U256_OP_COUNT, control, x10, x11, a_limbs, b_limbs
+                );
+            }
+        }
+
+        let (result, overflow) = execute_u256_op(a, b, control);
+
+        // Write result back to memory at x10 using volatile pattern
+        let result_limbs = u256_to_limbs(result);
+
+        unsafe {
+            if U256_OP_COUNT <= 5 {
+                eprintln!(
+                    "[U256] #{} result={:?} overflow={} -> writing to {:#x}",
+                    U256_OP_COUNT, result_limbs, overflow, x10
+                );
+            }
+        }
+
+        for i in 0..8 {
+            let addr = x10 + (i * 4) as u64;
+            let value = unsafe { core::ptr::read_volatile(&result_limbs[i]) };
+            self.write_silent(addr, value as u64, 4);
+        }
+
+        // Write overflow flag to x12 register
+        regs[12] = overflow as u64;
+    }
+
+    /// Print a summary of U256 delegation usage.
+    /// Call this at the end of execution to see if U256 delegation was used.
+    pub fn print_u256_summary() {
+        // Access the static from handle_u256_delegation
+        // Note: This is a bit hacky but works for debugging
+        eprintln!("[U256-DELEGATION] Summary: Check above for 'U256 delegation is ACTIVE' message");
+        eprintln!("[U256-DELEGATION] If no such message appeared, U256 delegation was NOT used by the guest");
     }
 
     /// Set the UART output mode.

@@ -1022,6 +1022,8 @@ impl<'a> Emu<'a> {
 
                 // Handle Blake2 CSR 0x7c7 delegation if needed
                 self.handle_blake2_if_needed(addr);
+                // Handle U256 CSR 0x7ca delegation if needed
+                self.handle_u256_if_needed(addr);
             }
             STORE_IND => {
                 // Calculate value
@@ -1049,6 +1051,8 @@ impl<'a> Emu<'a> {
 
                 // Handle Blake2 CSR 0x7c7 delegation if needed
                 self.handle_blake2_if_needed(addr);
+                // Handle U256 CSR 0x7ca delegation if needed
+                self.handle_u256_if_needed(addr);
             }
             _ => panic!(
                 "Emu::store_c() Invalid store={} pc={}",
@@ -1069,6 +1073,25 @@ impl<'a> Emu<'a> {
             let x12 = self.ctx.inst_ctx.regs[12] as u32;
             let x13 = self.ctx.inst_ctx.regs[13] as u32;
             self.ctx.inst_ctx.mem.handle_blake2_delegation(x10, x11, x12, x13);
+        }
+    }
+
+    /// Handle U256 CSR 0x7ca delegation if the write address matches.
+    ///
+    /// This is called after memory writes to check if U256 delegation should be triggered.
+    /// Uses register values x10-x12 for the U256 operation.
+    #[inline(always)]
+    fn handle_u256_if_needed(&mut self, addr: u64) {
+        if self.ctx.inst_ctx.mem.is_u256_csr_write(addr) {
+            let x10 = self.ctx.inst_ctx.regs[10];
+            let x11 = self.ctx.inst_ctx.regs[11];
+            let x12 = self.ctx.inst_ctx.regs[12] as u32;
+            self.ctx.inst_ctx.mem.handle_u256_delegation(
+                x10,
+                x11,
+                x12,
+                &mut self.ctx.inst_ctx.regs,
+            );
         }
     }
 
@@ -1593,8 +1616,9 @@ impl<'a> Emu<'a> {
         // Set oracle callback after context creation (context creation resets memory)
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
-            // Enable Blake2 delegation when oracle is active (for zksync-os proving)
+            // Enable Blake2 and U256 delegation when oracle is active (for zksync-os proving)
             self.ctx.inst_ctx.mem.enable_blake2_delegation();
+            self.ctx.inst_ctx.mem.enable_u256_delegation();
         }
 
         // Set UART output mode
@@ -1820,8 +1844,9 @@ impl<'a> Emu<'a> {
         // Set oracle callback after context creation (context creation resets memory)
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
-            // Enable Blake2 delegation when oracle is active (for zksync-os proving)
+            // Enable Blake2 and U256 delegation when oracle is active (for zksync-os proving)
             self.ctx.inst_ctx.mem.enable_blake2_delegation();
+            self.ctx.inst_ctx.mem.enable_u256_delegation();
         }
 
         // Set UART output mode
