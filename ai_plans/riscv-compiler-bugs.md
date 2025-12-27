@@ -416,7 +416,55 @@ let buf_word = unsafe { core::ptr::read_volatile(&self.buffer.buffer[word]) };
 self.state.words[word] ^= buf_word;
 ```
 
-### 12. RLP Encoding Functions for Block Hash
+### 12. Field Element from_bytes in secp256k1/secp256r1
+
+**Files:**
+- `crypto/src/secp256k1/field/field_5x52.rs` - `from_bytes_volatile()`
+- `crypto/src/secp256r1/field/mod.rs` - `from_be_bytes_volatile()`
+- `crypto/src/secp256r1/scalar/scalar64.rs` - `from_be_bytes_volatile()`
+
+**Problem:** The `from_bytes_unchecked()` functions are `const fn` and read bytes directly without volatile reads. The LLVM compiler optimizes these reads incorrectly on RISC-V 64-bit, causing specific bytes at positions 15, 19, 23 (0-indexed from MSB) to become `0xff`.
+
+**Corruption pattern observed:**
+```
+INPUT:  0x2b6a9d13f7f15919fc611536779bd8cb8a31d548ed1d215cbc2feb196b8ea7f0
+OUTPUT: 0x2b6a9d13f7f15919fc611536779bd8ff8a31d5ffed1d21ffbc2feb196b8ea7f0
+                                        ^^      ^^      ^^
+                                        Bytes at positions 15, 19, 23 → 0xff
+```
+
+**Impact:** This corruption affected secp256k1 public key recovery (ecrecover), causing signature validation to fail.
+
+```rust
+// BROKEN - const fn reads bytes without volatile protection
+pub(super) const fn from_bytes_unchecked(bytes: &[u8; 32]) -> Self {
+    let w0 = (bytes[31] as u64) | ((bytes[30] as u64) << 8) | ...;
+    // LLVM corrupts some byte reads on RV64
+}
+
+// FIXED - non-const fn with volatile reads
+#[cfg(target_arch = "riscv64")]
+#[inline(never)]
+fn from_bytes_volatile(bytes: &[u8; 32]) -> Self {
+    unsafe {
+        let read = |i: usize| core::ptr::read_volatile(&bytes[i]);
+        let w0 = (read(31) as u64) | ((read(30) as u64) << 8) | ...;
+        Self([w0, w1, w2, w3, w4])
+    }
+}
+
+pub(super) fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
+    #[cfg(target_arch = "riscv64")]
+    let val = Self::from_bytes_volatile(bytes);
+    #[cfg(not(target_arch = "riscv64"))]
+    let val = Self::from_bytes_unchecked(bytes);
+    // ...
+}
+```
+
+**Note:** This fix is enabled only for `target_arch = "riscv64"`. The `#[inline(never)]` attribute is important to prevent the compiler from inlining and re-introducing the optimization bug.
+
+### 13. RLP Encoding Functions for Block Hash
 
 **File:** `basic_bootloader/src/bootloader/rlp.rs`
 
@@ -504,7 +552,9 @@ Ensure ALL implementations have volatile fixes, not just one.
 | `basic_bootloader/src/bootloader/transaction/rlp_encoded/eip_2718_tx_envelope.rs` | Byte-by-byte hashing |
 | `basic_bootloader/src/bootloader/transaction/rlp_encoded/transaction_types/legacy_tx.rs` | Volatile copy + byte-by-byte |
 | `crypto/src/secp256k1/field/field_10x26.rs` | to_bytes() |
-| `crypto/src/secp256k1/field/field_5x52.rs` | to_bytes() |
+| `crypto/src/secp256k1/field/field_5x52.rs` | to_bytes(), from_bytes_volatile() |
+| `crypto/src/secp256r1/field/mod.rs` | from_be_bytes_volatile() |
+| `crypto/src/secp256r1/scalar/scalar64.rs` | from_be_bytes_volatile() |
 | `crypto/src/sha3/mod.rs` | MiniDigest::update/digest |
 | `crypto/src/blake2s/naive.rs` | MiniDigest::update/digest |
 | `crypto/src/blake2s/delegated_extended.rs` | spec_memcopy() |
