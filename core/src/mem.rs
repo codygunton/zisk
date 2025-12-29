@@ -123,8 +123,111 @@ pub enum OracleOp {
     Write(u64),
 }
 
+/// Trait for reading memory from the Zisk emulator.
+/// This allows oracle callbacks to read guest memory for operations like modexp.
+pub trait ZiskMemoryReader: Send + Sync {
+    /// Read a value from memory at the given address with the given width (1, 2, 4, or 8 bytes).
+    fn read_mem(&self, addr: u64, width: u64) -> u64;
+}
+
 /// Callback for oracle CSR reads/writes.
-pub type OracleCallback = Arc<Mutex<dyn FnMut(OracleOp) -> u64 + Send>>;
+/// The callback receives the operation and a memory reader for accessing guest memory.
+pub type OracleCallback = Arc<Mutex<dyn FnMut(OracleOp, &dyn ZiskMemoryReader) -> u64 + Send>>;
+
+/// A memory reader wrapper that holds a raw pointer to Mem for use during callbacks.
+///
+/// # Safety
+/// This struct is only safe to use when:
+/// 1. The pointer points to valid `Mem` data
+/// 2. The struct is only used for reading (never writing)
+/// 3. Used synchronously within a callback (pointer doesn't outlive Mem)
+pub struct MemReaderPtr {
+    read_sections: *const Vec<MemSection>,
+    write_section: *const MemSection,
+    free_input: u64,
+}
+
+// Safety: The raw pointers are only dereferenced synchronously during callback execution,
+// and the Mem they point to is valid for the duration of the callback.
+unsafe impl Send for MemReaderPtr {}
+unsafe impl Sync for MemReaderPtr {}
+
+impl MemReaderPtr {
+    /// Create a new MemReaderPtr from a Mem reference.
+    ///
+    /// # Safety
+    /// The returned MemReaderPtr must only be used while `mem` is valid.
+    pub unsafe fn from_mem(mem: &Mem) -> Self {
+        Self {
+            read_sections: &mem.read_sections as *const _,
+            write_section: &mem.write_section as *const _,
+            free_input: mem.free_input,
+        }
+    }
+}
+
+impl ZiskMemoryReader for MemReaderPtr {
+    fn read_mem(&self, addr: u64, width: u64) -> u64 {
+        // Safety: We ensure the pointers are valid for the duration of callback execution
+        unsafe {
+            let read_sections = &*self.read_sections;
+            let write_section = &*self.write_section;
+
+            // First try to read in the write section
+            if (addr >= write_section.start) && (addr <= (write_section.end - width)) {
+                let read_position: usize = (addr - write_section.start) as usize;
+                return match width {
+                    1 => write_section.buffer[read_position] as u64,
+                    2 => u16::from_le_bytes(
+                        write_section.buffer[read_position..read_position + 2].try_into().unwrap(),
+                    ) as u64,
+                    4 => u32::from_le_bytes(
+                        write_section.buffer[read_position..read_position + 4].try_into().unwrap(),
+                    ) as u64,
+                    8 => u64::from_le_bytes(
+                        write_section.buffer[read_position..read_position + 8].try_into().unwrap(),
+                    ),
+                    _ => panic!("MemReaderPtr::read_mem() invalid width={width}"),
+                };
+            }
+
+            // Search read sections
+            if let Ok(section_idx) = read_sections.binary_search_by(|section| {
+                if addr < section.start {
+                    std::cmp::Ordering::Greater
+                } else if addr > section.end - width {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            }) {
+                let section = &read_sections[section_idx];
+                let read_position: usize = (addr - section.start) as usize;
+
+                // Handle special INPUT_ADDR case
+                if addr == INPUT_ADDR && width == 8 {
+                    return self.free_input;
+                }
+
+                return match width {
+                    1 => section.buffer[read_position] as u64,
+                    2 => u16::from_le_bytes(
+                        section.buffer[read_position..read_position + 2].try_into().unwrap(),
+                    ) as u64,
+                    4 => u32::from_le_bytes(
+                        section.buffer[read_position..read_position + 4].try_into().unwrap(),
+                    ) as u64,
+                    8 => u64::from_le_bytes(
+                        section.buffer[read_position..read_position + 8].try_into().unwrap(),
+                    ),
+                    _ => panic!("MemReaderPtr::read_mem() invalid width={width}"),
+                };
+            }
+
+            panic!("MemReaderPtr::read_mem() section not found for addr={addr:x} width={width}");
+        }
+    }
+}
 
 /// Callback for UART output bytes.
 pub type UartCallback = Arc<Mutex<dyn FnMut(u8) + Send>>;
@@ -598,7 +701,9 @@ impl Mem {
             if addr == ORACLE_CSR_ADDR {
                 if let Some(callback) = &self.oracle_callback {
                     let mut cb = callback.lock().expect("oracle lock poisoned");
-                    return cb(OracleOp::Read);
+                    // Safety: MemReaderPtr is only used synchronously within this callback
+                    let mem_reader = unsafe { MemReaderPtr::from_mem(self) };
+                    return cb(OracleOp::Read, &mem_reader);
                 }
             }
             return value;
@@ -830,7 +935,9 @@ impl Mem {
         if addr == ORACLE_CSR_ADDR {
             if let Some(callback) = &self.oracle_callback {
                 let mut cb = callback.lock().expect("oracle lock poisoned");
-                cb(OracleOp::Write(val));
+                // Safety: MemReaderPtr is only used synchronously within this callback
+                let mem_reader = unsafe { MemReaderPtr::from_mem(self) };
+                cb(OracleOp::Write(val), &mem_reader);
                 return;
             }
         }

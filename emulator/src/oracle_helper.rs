@@ -1,7 +1,7 @@
 //! Oracle integration helpers for the emulator.
 
 use std::sync::{Arc, Mutex};
-use zisk_core::{OracleCallback, OracleOp};
+use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
 use zisk_oracle::processors::{ProtocolAwareReplayOracle, Replay64Oracle, ReplayOracle};
 use zisk_oracle::ZiskOracle;
 
@@ -25,7 +25,7 @@ use zisk_oracle::ZiskOracle;
 pub fn create_oracle_callback(oracle: ZiskOracle) -> OracleCallback {
     let oracle = Arc::new(Mutex::new(oracle));
 
-    Arc::new(Mutex::new(move |op: OracleOp| -> u64 {
+    Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
         let mut oracle_guard = oracle.lock().expect("oracle lock poisoned");
         match op {
             OracleOp::Read => oracle_guard.read() as u64,
@@ -59,7 +59,7 @@ pub fn create_oracle_callback(oracle: ZiskOracle) -> OracleCallback {
 pub fn create_replay_oracle_callback(oracle: ReplayOracle) -> OracleCallback {
     let oracle = Arc::new(oracle);
 
-    Arc::new(Mutex::new(move |op: OracleOp| -> u64 {
+    Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
         match op {
             OracleOp::Read => oracle.read() as u64,
             OracleOp::Write(val) => {
@@ -97,7 +97,7 @@ pub fn create_replay_oracle_callback(oracle: ReplayOracle) -> OracleCallback {
 pub fn create_protocol_replay_callback(oracle: ProtocolAwareReplayOracle) -> OracleCallback {
     let oracle = Arc::new(oracle);
 
-    Arc::new(Mutex::new(move |op: OracleOp| -> u64 {
+    Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
         match op {
             OracleOp::Read => oracle.read() as u64,
             OracleOp::Write(val) => {
@@ -133,7 +133,7 @@ pub fn create_protocol_replay_callback(oracle: ProtocolAwareReplayOracle) -> Ora
 pub fn create_replay64_oracle_callback(oracle: Replay64Oracle) -> OracleCallback {
     let oracle = Arc::new(oracle);
 
-    Arc::new(Mutex::new(move |op: OracleOp| -> u64 {
+    Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
         match op {
             OracleOp::Read => oracle.read(),
             OracleOp::Write(val) => {
@@ -149,19 +149,29 @@ mod tests {
     use super::*;
     use zisk_oracle::processors::UartProcessor;
 
+    /// Dummy memory reader for testing - panics if actually used
+    struct DummyMemReader;
+
+    impl ZiskMemoryReader for DummyMemReader {
+        fn read_mem(&self, addr: u64, width: u64) -> u64 {
+            panic!("DummyMemReader::read_mem() called with addr={addr:x} width={width}");
+        }
+    }
+
     #[test]
     fn test_create_oracle_callback() {
         let mut oracle = ZiskOracle::new();
         oracle.add_processor(UartProcessor::new());
 
         let callback = create_oracle_callback(oracle);
+        let dummy_mem = DummyMemReader;
 
         // Test write
         let mut cb = callback.lock().expect("lock");
-        let _ = cb(OracleOp::Write(0xFFFFFFFF)); // UART query ID
+        let _ = cb(OracleOp::Write(0xFFFFFFFF), &dummy_mem); // UART query ID
 
         // Test read (should return 0 since no response after UART)
-        let value = cb(OracleOp::Read);
+        let value = cb(OracleOp::Read, &dummy_mem);
         // UART doesn't return length, so this should be 0 initially
         assert_eq!(value, 0);
     }
@@ -171,15 +181,16 @@ mod tests {
         let data = vec![0x12345678, 0xDEADBEEF];
         let replay_oracle = ReplayOracle::new(data);
         let callback = create_replay_oracle_callback(replay_oracle);
+        let dummy_mem = DummyMemReader;
 
         let mut cb = callback.lock().expect("lock");
 
         // Reads return the pre-recorded values
-        assert_eq!(cb(OracleOp::Read), 0x12345678);
-        assert_eq!(cb(OracleOp::Read), 0xDEADBEEF);
-        assert_eq!(cb(OracleOp::Read), 0); // Exhausted
+        assert_eq!(cb(OracleOp::Read, &dummy_mem), 0x12345678);
+        assert_eq!(cb(OracleOp::Read, &dummy_mem), 0xDEADBEEF);
+        assert_eq!(cb(OracleOp::Read, &dummy_mem), 0); // Exhausted
 
         // Writes are no-ops
-        assert_eq!(cb(OracleOp::Write(999)), 0);
+        assert_eq!(cb(OracleOp::Write(999), &dummy_mem), 0);
     }
 }

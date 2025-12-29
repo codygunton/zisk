@@ -49,7 +49,7 @@ pub use stats_report::*;
 pub use witness::{create_witness_capture_callback, WitnessCapture};
 
 // Re-export oracle types for external crates
-pub use zisk_core::{OracleCallback, OracleOp};
+pub use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
 
 // Re-export EmuTrace for witness generation callers
 pub use zisk_common::EmuTrace;

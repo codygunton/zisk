@@ -4,7 +4,7 @@
 //! producing a witness file that can be replayed later.
 
 use std::sync::{Arc, Mutex};
-use zisk_core::{OracleCallback, OracleOp};
+use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
 
 /// Captures oracle reads into a Vec<u32> while forwarding to an underlying oracle.
 ///
@@ -12,7 +12,7 @@ use zisk_core::{OracleCallback, OracleOp};
 /// can later be serialized to a witness file for replay execution.
 pub struct WitnessCapture<F>
 where
-    F: FnMut(OracleOp) -> u64 + Send + 'static,
+    F: FnMut(OracleOp, &dyn ZiskMemoryReader) -> u64 + Send + 'static,
 {
     inner: F,
     reads: Arc<Mutex<Vec<u32>>>,
@@ -20,7 +20,7 @@ where
 
 impl<F> WitnessCapture<F>
 where
-    F: FnMut(OracleOp) -> u64 + Send + 'static,
+    F: FnMut(OracleOp, &dyn ZiskMemoryReader) -> u64 + Send + 'static,
 {
     /// Create a new witness capture wrapping an inner oracle callback.
     pub fn new(inner: F) -> Self {
@@ -39,17 +39,17 @@ where
         let inner = Arc::new(Mutex::new(self.inner));
         let reads = self.reads;
 
-        Arc::new(Mutex::new(move |op: OracleOp| -> u64 {
+        Arc::new(Mutex::new(move |op: OracleOp, mem_reader: &dyn ZiskMemoryReader| -> u64 {
             let mut inner_guard = inner.lock().expect("inner oracle lock poisoned");
             match op {
                 OracleOp::Read => {
-                    let value = inner_guard(OracleOp::Read);
+                    let value = inner_guard(OracleOp::Read, mem_reader);
                     // Capture the read value as u32
                     let value_u32 = value as u32;
                     reads.lock().expect("reads lock poisoned").push(value_u32);
                     value
                 }
-                OracleOp::Write(val) => inner_guard(OracleOp::Write(val)),
+                OracleOp::Write(val) => inner_guard(OracleOp::Write(val), mem_reader),
             }
         }))
     }
@@ -92,7 +92,7 @@ where
     let reads: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
     let reads_clone = Arc::clone(&reads);
 
-    let callback: OracleCallback = Arc::new(Mutex::new(move |op: OracleOp| -> u64 {
+    let callback: OracleCallback = Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
         match op {
             OracleOp::Read => {
                 let value = {
@@ -116,6 +116,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zisk_core::ZiskMemoryReader;
+
+    /// Dummy memory reader for tests - panics if actually used
+    struct DummyMemReader;
+
+    impl ZiskMemoryReader for DummyMemReader {
+        fn read_mem(&self, addr: u64, width: u64) -> u64 {
+            panic!("DummyMemReader::read_mem() called with addr={addr:x} width={width}");
+        }
+    }
 
     #[test]
     fn test_witness_capture_records_reads() {
@@ -123,7 +133,7 @@ mod tests {
         let counter = Arc::new(Mutex::new(0u32));
         let counter_clone = Arc::clone(&counter);
 
-        let inner = move |op: OracleOp| -> u64 {
+        let inner = move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
             match op {
                 OracleOp::Read => {
                     let mut c = counter_clone.lock().unwrap();
@@ -138,13 +148,14 @@ mod tests {
         let capture = WitnessCapture::new(inner);
         let reads_ref = capture.get_reads();
         let callback = capture.into_callback();
+        let dummy_mem = DummyMemReader;
 
         // Perform some reads
         {
             let mut cb = callback.lock().unwrap();
-            assert_eq!(cb(OracleOp::Read), 0);
-            assert_eq!(cb(OracleOp::Read), 1);
-            assert_eq!(cb(OracleOp::Read), 2);
+            assert_eq!(cb(OracleOp::Read, &dummy_mem), 0);
+            assert_eq!(cb(OracleOp::Read, &dummy_mem), 1);
+            assert_eq!(cb(OracleOp::Read, &dummy_mem), 2);
         }
 
         // Check captured reads
@@ -171,13 +182,15 @@ mod tests {
             },
         );
 
+        let dummy_mem = DummyMemReader;
+
         // Perform reads and writes
         {
             let mut cb = callback.lock().unwrap();
-            assert_eq!(cb(OracleOp::Read), 10);
-            cb(OracleOp::Write(100));
-            assert_eq!(cb(OracleOp::Read), 11);
-            cb(OracleOp::Write(200));
+            assert_eq!(cb(OracleOp::Read, &dummy_mem), 10);
+            cb(OracleOp::Write(100), &dummy_mem);
+            assert_eq!(cb(OracleOp::Read, &dummy_mem), 11);
+            cb(OracleOp::Write(200), &dummy_mem);
         }
 
         // Check captured reads
