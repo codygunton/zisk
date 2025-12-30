@@ -114,6 +114,21 @@ impl ZiskEmulator {
         callback: Option<impl Fn(EmuTrace)>,
         oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<u8>, ZiskEmulatorErr> {
+        Self::process_rom_with_regs(rom, inputs, options, callback, oracle_callback)
+            .map(|(output, _regs)| output)
+    }
+
+    /// Processes a Zisk rom and returns both output buffer and final register values.
+    ///
+    /// This is useful for compatibility with airbender which reads output from registers x10-x17.
+    /// Returns: (output_buffer, registers_x10_to_x17_as_u32)
+    pub fn process_rom_with_regs(
+        rom: &ZiskRom,
+        inputs: &[u8],
+        options: &EmuOptions,
+        callback: Option<impl Fn(EmuTrace)>,
+        oracle_callback: Option<OracleCallback>,
+    ) -> Result<(Vec<u8>, [u32; 8]), ZiskEmulatorErr> {
         if options.verbose {
             println!("process_rom() rom size={} inputs size={}", rom.insts.len(), inputs.len());
         }
@@ -158,6 +173,21 @@ impl ZiskEmulator {
         // Get the emulation output
         let output = emu.get_output_8();
 
+        // Get final register values x10-x17 (a0-a7 in RISC-V ABI)
+        // These are used by airbender-compatible programs to return a 32-byte hash.
+        // On 64-bit zisk, we take the lower 32 bits of each register.
+        let regs = emu.get_regs_array();
+        let regs_x10_x17: [u32; 8] = [
+            regs[10] as u32,
+            regs[11] as u32,
+            regs[12] as u32,
+            regs[13] as u32,
+            regs[14] as u32,
+            regs[15] as u32,
+            regs[16] as u32,
+            regs[17] as u32,
+        ];
+
         // OUTPUT:
         // Save output to a file if requested
         if options.output.is_some() {
@@ -176,7 +206,7 @@ impl ZiskEmulator {
             }
         }
 
-        Ok(output)
+        Ok((output, regs_x10_x17))
     }
 
     /// EXECUTE phase
