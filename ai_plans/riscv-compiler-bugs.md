@@ -542,6 +542,152 @@ Ensure ALL implementations have volatile fixes, not just one.
 4. **Check trait usage:** When using hashers, verify the trait (`MiniDigest` vs `Digest`)
 5. **Check all code paths:** `#[cfg]` attributes may select different code for RV32 vs RV64
 
+### 14. BN254 Precompile Output Memory Corruption (Sign-Extension Bug)
+
+**Discovery Date:** 2026-01-06
+
+**Files:** Memory transfer between precompile output and next precompile input
+
+**Problem:** Data returned from `bn254_ecmul` precompile is corrupted when read as input by `bn254_ecadd`. The corruption follows a **sign-extension pattern** - bytes with high bit set (0x80-0xFF) are being sign-extended.
+
+**Evidence from logs:**
+
+| ecmul OUTPUT | ecadd INPUT | Pattern |
+|--------------|-------------|---------|
+| `99014ece` | `ffffffce` | `0xce` sign-extended |
+| `2488b680` | `ffffff80` | `0x80` sign-extended |
+| `28d1de60` | `ffffff60` | `0x60` NOT affected (high bit 0) |
+| `98fe3561` | `ffffff61` | `0x61` NOT affected (high bit 0) |
+| `8d5efa02` | `ffffff02` | `0x02` NOT affected (high bit 0) |
+
+Wait - `0x60`, `0x61`, `0x02` don't have high bit set, yet they're still corrupted. Let me re-examine...
+
+Actually looking at the pattern more carefully:
+- Word `99014ece` → `ffffffce`: only last byte `ce` preserved
+- Word `2488b680` → `ffffff80`: only last byte `80` preserved
+- Word `28d1de60` → `ffffff60`: only last byte `60` preserved
+- Word `98fe3561` → `ffffff61`: only last byte `61` preserved
+
+This is a **byte-to-word extension** bug - each byte is being treated as if it should fill a 32-bit word, with the upper 24 bits set to `0xff` regardless of the sign.
+
+**Comparison:**
+- Airbender (RV32): 21 successful ecadd calls with correct inputs
+- Zisk (RV64): 1 ecadd call with corrupted inputs, then fails
+
+**Root Cause Hypothesis:** The EVM's `RETURNDATACOPY` or similar opcode that copies ecmul's return data back to memory is corrupting the data on RV64. The corruption pattern suggests a loop that reads bytes but writes 32-bit words with incorrect extension.
+
+**Next Steps:**
+1. Add logging to `serialize_projective()` in ecadd.rs (used by ecmul)
+2. Add logging to EVM's RETURNDATACOPY or CALL return handling
+3. Compare the memory state between ecmul return and ecadd input
+
+### 15. BN254 Pairing Field Extension Inverse and Cyclotomic Operations
+
+**Discovery Date:** 2026-01-06
+
+**Files:**
+- `crypto/src/bn254/fields/fq6.rs` - `fq6_inverse_volatile()`
+- `crypto/src/bn254/fields/fq12.rs` - `fq12_inverse_volatile()`, `fq12_cyclotomic_inverse_volatile()`
+- `crypto/src/bn254/curves/pairing_impl.rs` - `fast_exp_loop_with_naf()`, `final_exponentiation()`
+
+**Problem:** The BN254 pairing check (used by bn254_pairing precompile) produces incorrect results on RV64 due to compiler optimization bugs in extension field arithmetic.
+
+**Bug 1: Fq12 Inverse (General)**
+The arkworks `Fq12::inverse()` function computes inverses incorrectly on RV64. The computed inverse verifies correctly (`a * inv(a) = 1`), but intermediate values are corrupted.
+
+```rust
+// BROKEN - arkworks generic inverse
+f.inverse()
+
+// FIXED - custom volatile implementation
+#[cfg(target_arch = "riscv64")]
+pub fn fq12_inverse_volatile(f: &Fq12) -> Option<Fq12> {
+    // ... manual implementation with vol_refresh_fq6() at each step
+}
+```
+
+**Bug 2: Fq6 Inverse**
+The Fq6 inverse is needed by Fq12 inverse and also had corruption issues.
+
+```rust
+// FIXED - custom volatile implementation
+#[cfg(target_arch = "riscv64")]
+pub fn fq6_inverse_volatile(f: &Fq6) -> Option<Fq6> {
+    // Algorithm 17 from "High-Speed Software Implementation of the Optimal Ate Pairing"
+    // with volatile refresh after each arithmetic operation
+}
+```
+
+**Bug 3: Cyclotomic Inverse**
+The `cyclotomic_inverse()` for elements in the cyclotomic subgroup of Fq12 is a simple conjugation `(c0, c1) -> (c0, -c1)`, but even this got corrupted.
+
+```rust
+// BROKEN - arkworks cyclotomic inverse
+f.cyclotomic_inverse()
+
+// FIXED - custom volatile implementation
+#[cfg(target_arch = "riscv64")]
+pub fn fq12_cyclotomic_inverse_volatile(f: &Fq12) -> Option<Fq12> {
+    let c0 = vol_refresh_fq6(&f.c0);
+    let c1_neg = vol_refresh_fq6(&(-f.c1));
+    let result = Fq12::new(c0, c1_neg);
+    Some(vol_refresh_fq12(&result))
+}
+```
+
+**Bug 4: NAF Exponentiation Loop**
+The `fast_exp_loop_with_naf` function computes `f^x` using a NAF (non-adjacent form) representation. Each operation in the loop requires volatile refresh to prevent corruption.
+
+```rust
+// FIXED - volatile refresh after each operation
+fn fast_exp_loop_with_naf<I: Iterator<Item = i8>>(f: &mut Fq12, e: I) {
+    let self_inverse = fq12_cyclotomic_inverse_volatile(f).unwrap();
+    let self_inverse = vol_refresh_fq12(&self_inverse);
+    let mut res = Fq12::one();
+
+    for value in e {
+        if found_nonzero {
+            res.cyclotomic_square_in_place();
+            res = vol_refresh_fq12(&res);  // Must refresh after square
+        }
+        if value != 0 {
+            res *= &*f;  // or *= &self_inverse
+            res = vol_refresh_fq12(&res);  // Must refresh after multiply
+        }
+    }
+    *f = vol_refresh_fq12(&res);
+}
+```
+
+**Bug 5: Final Exponentiation Hard Part**
+The final exponentiation in BN254 pairing has an "easy part" (Frobenius + inverse) and a "hard part" (many exp_by_neg_x + cyclotomic operations). Every intermediate result must be refreshed.
+
+```rust
+// FIXED - volatile refresh at every step
+fn final_exponentiation(f: MillerLoopOutput<Self>) -> Option<PairingOutput<Self>> {
+    fn vol_refresh(val: &Fq12) -> Fq12 { /* ... */ }
+
+    // Easy part
+    let mut r = vol_refresh(&(f1 * &f2));
+    r.frobenius_map_in_place(2);
+    r = vol_refresh(&r);
+    r *= &f2;
+    r = vol_refresh(&r);
+
+    // Hard part - EVERY result must be refreshed
+    let y0 = vol_refresh(&Self::exp_by_neg_x(r));
+    let y1 = vol_refresh(&y0.cyclotomic_square());
+    let y2 = vol_refresh(&y1.cyclotomic_square());
+    let mut y3 = vol_refresh(&(y2 * &y1));
+    // ... etc for y4 through y16
+}
+```
+
+**Impact:** These fixes resolved the BN254 pairing check failures and brought Zisk's proof output hash to match Airbender's:
+- Both produce: `0x30c52015c81fcb3e80893b8bbb03ce0222638db5b200bb101e25e438cf7c7453`
+
+**Key Insight:** The logging statements originally in the code contained `volatile` reads which served as unintentional memory barriers. When the logging was removed, the bugs resurfaced. The fix is to keep explicit `vol_refresh()` calls after every arithmetic operation in extension field code.
+
 ### Files That Required Volatile Fixes (Complete List)
 
 | File | Function(s) |
@@ -564,3 +710,6 @@ Ensure ALL implementations have volatile fixes, not just one.
 | `evm_interpreter/src/instructions/heap.rs` | mload(), mstore(), mcopy() |
 | `evm_interpreter/src/instructions/system.rs` | calldataload() |
 | `supporting_crates/keccak/src/lib.rs` | append(), absorb_from_buffer() |
+| `crypto/src/bn254/fields/fq6.rs` | fq6_inverse_volatile() |
+| `crypto/src/bn254/fields/fq12.rs` | fq12_inverse_volatile(), fq12_cyclotomic_inverse_volatile() |
+| `crypto/src/bn254/curves/pairing_impl.rs` | fast_exp_loop_with_naf(), final_exponentiation() |
