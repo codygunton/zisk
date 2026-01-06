@@ -478,9 +478,10 @@ impl Mem {
         let b = u256_from_limbs(&b_limbs);
         let control = (x12 & 0xFF) as u8;
 
-        // Debug first few operations
+        // Debug - log periodically and also final count
         unsafe {
-            if U256_OP_COUNT <= 5 {
+            // Print every 10000th operation to track progress
+            if U256_OP_COUNT <= 5 || U256_OP_COUNT % 10000 == 0 {
                 eprintln!(
                     "[U256] #{} ctrl={:#04x} x10={:#x} x11={:#x} a={:?} b={:?}",
                     U256_OP_COUNT, control, x10, x11, a_limbs, b_limbs
@@ -494,7 +495,7 @@ impl Mem {
         let result_limbs = u256_to_limbs(result);
 
         unsafe {
-            if U256_OP_COUNT <= 5 {
+            if U256_OP_COUNT <= 5 || U256_OP_COUNT % 10000 == 0 {
                 eprintln!(
                     "[U256] #{} result={:?} overflow={} -> writing to {:#x}",
                     U256_OP_COUNT, result_limbs, overflow, x10
