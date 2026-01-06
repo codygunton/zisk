@@ -10,8 +10,8 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
-
-BLOCK_NUMBER="${1:-22244135}"
+# BLOCK_NUMBER="${1:-22244135}"
+BLOCK_NUMBER="${1:-19299001}"
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"

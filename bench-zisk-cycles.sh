@@ -12,7 +12,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
 SETUP="${SETUP:-1}"
-BLOCK_NUMBER="${1:-22244135}"
+# BLOCK_NUMBER="${1:-22244135}"
+BLOCK_NUMBER="${1:-19299001}"
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"
@@ -44,7 +45,7 @@ echo "Running eth_runner..."
 cd "$ETH_RUNNER_DIR"
 export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 export LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH"
-export VERBOSE_ORACLE=1  # Uncomment to see detailed oracle query logs
+export VERBOSE_ORACLE=1 # Uncomment to see detailed oracle query logs
 # export ZISK_QUIET=1  # Uncomment to suppress zisk output
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features "rig/zisk-witness,rig/no_print,rig/unlimited_native" \
