@@ -18,19 +18,4 @@ We can track progress by running list-txs.sh with flags to count the number of t
 
 DO NOT FORGET: We have had trouble with memory corruption, even during simple copies, due to what seem like compiler misoptimizations. These are fixed using volatile reads and writes. We are tracking these issues in @ai_plans/riscv-compiler-bugs.md.
 
-DEBUGGING CHECKLIST (STOP if you skip a step):
-1. Add logging to suspected area
-2. Run bench-airbender-cycles.sh (~55s)
-3. Run bench-zisk-cycles.sh (~55s)
-4. DIFF the logs - find FIRST divergence point
-5. Repeat 1-4 until isolated to specific function/line
-6. ONLY THEN consider volatile workaround
-
-NEVER add volatile read/write workarounds until you have:
-- Logged output from BOTH Airbender AND Zisk
-- Identified the EXACT line where they first diverge
-- Documented the evidence in ai_plans/riscv-compiler-bugs.md
-
-ALSO: running the zisk benching script only takes about 55s, so you should not use long 3-5 min timeouts and waiting periods needlessly.
-
 You are running on a capable machine and you should make use of parallelism freely.

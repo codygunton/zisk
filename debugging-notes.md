@@ -669,3 +669,15 @@ pub unsafe fn spec_memcopy_u32_nonoverlapping(
   This is the exact same issue as EIP-2718 - passing inner_slice (pointing to oracle/input buffer memory) directly to hasher.update().
 
   The common root cause is confirmed: passing slices from input buffer memory directly to the hasher fails on ZisK. The workaround that worked for EIP-2718 should work here too.
+
+
+
+final nail in the coffin:
+  The Root Cause
+
+  LLVM's optimizer on RISC-V 64-bit was corrupting Fq12 extension field values during the complex arithmetic in final_exponentiation(). The corruption happened because the compiler was incorrectly optimizing memory operations - reordering, combining, or eliding stores/loads.
+
+  The Critical Discovery
+
+  Initially, debug logging statements contained volatile reads to print values. When we removed the logging, the hashes stopped matching. This revealed that the volatile reads in the logging were acting as unintentional memory barriers that prevented the compiler from misoptimizing.
+
