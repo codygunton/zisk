@@ -20,6 +20,8 @@ and
 /tmp/zisk-bench.log
 confirm this.
 
+You will NOT use needlessly long timeouts when running these. 90s is sufficient for each
+
 However, on these branches, the storage model uses a blake2s tree, whereas for real Ethereum state transitions we should use the real MPT. Our goal is to change that. We have leared that  using repositories as in this table:
   | Repository       | Branch                       |
   |------------------|------------------------------|
