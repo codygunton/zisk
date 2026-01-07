@@ -1,21 +1,37 @@
 ZKsyncOS (in zksync-os/) is a "guest program" for proving EVM execution using Airbender (in zksync-airbender/), a ZKVM targeting RV32IM + a limited set of csrrw instructions used to interact with external oracles. We are adapting that guest program to run in ZisK, which targets RV64IMAFDC.
 
-We are currently debugging **block 19299001**. The benchmark scripts should be configured to run this block.
+We have already achieved a primary goal using ZisK to execute real Ethereum blocks in ZKsyncOS as built for RV64IMAC. We did this on the branches
+
+% git rev-parse HEAD         ~/zisk zksyncos
+e11018e4af2176a4599ed9ba91f028743c91e782 
+% git rev-parse HEAD         ~/zisk/zksync-os zisk-integration
+11c3a4f5f8ab24c90964134568096bcf260cb332
+% git rev-parse HEAD         ~/zisk/zksync-airbender zisk-integration
+c55b84d1840194f29953a4e37495e9372080f28c
 
 
-We care about reproducibility and maintainability of our code. We have bash scripts that we use for building and running the software. Our main debugging tool at the moment is to run
+The cycle benchign/testing scripts
 ./bench-zisk-cycles.sh 
-and/or
+and
 ./bench-airbender-cycles.sh
-and then inspect the logs
+which produce logs 
 /tmp/airbender-bench.log
-and/or
+and
 /tmp/zisk-bench.log
-and sometimes
-zksync-os/zksync_os/zksync_os_zisk.dump
+confirm this.
 
-We can track progress by running list-txs.sh with flags to count the number of transactions that don't revert.
+However, on these branches, the storage model uses a blake2s tree, whereas for real Ethereum state transitions we should use the real MPT. Our goal is to change that. We have leared that  using repositories as in this table:
+  | Repository       | Branch                       |
+  |------------------|------------------------------|
+  | zksync-os        | popzxc/more-ethproofs-fusaka |
+  | zksync-airbender | dev                          |
 
-DO NOT FORGET: We have had trouble with memory corruption, even during simple copies, due to what seem like compiler misoptimizations. These are fixed using volatile reads and writes. We are tracking these issues in @ai_plans/riscv-compiler-bugs.md.
+we _could_ have built our ZisK integration to use the Keccak MPT of Ethereum. The only real different _should_ be that we implement Keccak delegation rather than Blake2s delegation. This we will have to fix after rebasing.
 
-You are running on a capable machine and you should make use of parallelism freely.
+The goal of our rebase are: 
+  1) execute bench-airbender-cycles.sh successfully
+  2) execute bench-zisk-cycles.sh at least as far as hitting some failing instruction, which will likely be a Keccak delegation instruction. This is
+  csrrw x0, 0x7CB, x0 where:
+  - CSR address 0x7CB = NON_DETERMINISM_CSR (0x7C0) + 11
+  - The state pointer is passed in register x11
+  - The control value is tracked in register x10
