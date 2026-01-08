@@ -6,7 +6,8 @@ set -e
 # Usage: ./bench-zisk-cycles.sh [BLOCK_NUMBER]
 #
 # Environment variables:
-#   SETUP=1  - Run ./setup.sh first (default: 1)
+#   SETUP=1           - Run ./setup.sh first (default: 1)
+#   SKIP_SIMULATION=1 - Skip ZisK emulation, run bootloader only (faster, no cycle counts)
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
@@ -47,9 +48,17 @@ export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 export LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH"
 export VERBOSE_ORACLE=1 # Uncomment to see detailed oracle query logs
 # export ZISK_QUIET=1  # Uncomment to suppress zisk output
+
+# SKIP_SIMULATION=1 to skip ZisK emulation (faster, but no cycle counts)
+SKIP_SIM_FLAG=""
+if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
+    echo "SKIP_SIMULATION=1: Skipping ZisK emulation (bootloader only)" >> /tmp/zisk-bench.log
+    SKIP_SIM_FLAG="--only-forward"
+fi
+
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features "rig/zisk-witness,rig/no_print,rig/unlimited_native" \
-    -- single-run --block-dir "$BLOCK_DIR" >> /tmp/zisk-bench.log 2>&1
+    -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/zisk-bench.log 2>&1
 cd "$REPO_ROOT"
 
 echo ""
