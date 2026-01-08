@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 # Default to block with actual transactions (155 txs, ~12.8M gas)
 # Block 23598300 is empty (0 txs) but has Keccak MPT witness
-BLOCK_NUMBER="${1:-19299001}"
+BLOCK_NUMBER="${1:-23598300}"
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"
@@ -63,17 +63,29 @@ cd "$ETH_RUNNER_DIR"
 export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 # export VERBOSE_ORACLE=1  # Uncomment to see detailed oracle query logs
 
+# SKIP_SIMULATION=1 to skip RISC-V simulation (faster, but no cycle counts)
+SKIP_SIM_FLAG=""
+if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
+    echo "SKIP_SIMULATION=1: Skipping RISC-V simulation (bootloader only)" >> /tmp/airbender-bench.log
+fi
+
 # Detect which command to use based on available files
 if [[ -f "$BLOCK_DIR/witness.json" ]]; then
     echo "Using single-eth-run (Keccak MPT model with witness.json)" >> /tmp/airbender-bench.log
+    if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
+        SKIP_SIM_FLAG="--skip-witness"
+    fi
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
         --features "rig/unlimited_native" \
-        -- single-eth-run --block-dir "$BLOCK_DIR" >> /tmp/airbender-bench.log 2>&1
+        -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
 elif [[ -f "$BLOCK_DIR/prestatetrace.json" ]]; then
     echo "Using single-run (flat storage model with prestatetrace.json)" >> /tmp/airbender-bench.log
+    if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
+        SKIP_SIM_FLAG="--only-forward"
+    fi
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
         --features "rig/unlimited_native" \
-        -- single-run --block-dir "$BLOCK_DIR" >> /tmp/airbender-bench.log 2>&1
+        -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
 else
     echo "ERROR: Block directory doesn't have required files (witness.json or prestatetrace.json)" >> /tmp/airbender-bench.log
     exit 1
