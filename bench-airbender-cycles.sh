@@ -32,7 +32,7 @@ echo ""
 echo "Building Airbender binary..."
 {
     cd "$ZKSYNCOS_DIR/zksync_os"
-    FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,print_debug_info,cycle_marker" ./build.sh --machine airbender
+    FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,print_debug_info,global-alloc,pectra" ./build.sh --machine airbender
     cd "$REPO_ROOT"
 } >> /tmp/airbender-bench.log 2>&1
 
@@ -81,7 +81,7 @@ if [[ -f "$BLOCK_DIR/witness.json" ]]; then
     # pectra feature enables type 3 (blob) and type 4 (EIP-7702) transaction support
     # cycle_marker enables cycle count output from the simulator
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
-        --features "pectra,rig/unlimited_native,cycle_marker" \
+        --features "pectra,rig/unlimited_native" \
         -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
 elif [[ -f "$BLOCK_DIR/prestatetrace.json" ]]; then
     echo "Using single-run (flat storage model with prestatetrace.json)" >> /tmp/airbender-bench.log
