@@ -14,7 +14,8 @@ cd "$REPO_ROOT"
 
 SETUP="${SETUP:-1}"
 # BLOCK_NUMBER="${1:-22244135}"
-BLOCK_NUMBER="${1:-19299001}"
+# BLOCK_NUMBER="${1:-19299001}"  # Flat storage block (no witness.json)
+BLOCK_NUMBER="${1:-24198369}"  # Ethereum block with 426 txs, ~45M gas
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"
@@ -40,6 +41,9 @@ ln -sf zksync_os_zisk.bin "$ZKSYNCOS_DIR/zksync_os/for_tests.bin"
 ln -sf zksync_os_zisk.elf "$ZKSYNCOS_DIR/zksync_os/for_tests.elf"
 ln -sf zksync_os_zisk.bin "$ZKSYNCOS_DIR/zksync_os/evm_replay.bin"
 ln -sf zksync_os_zisk.elf "$ZKSYNCOS_DIR/zksync_os/evm_replay.elf"
+# Default app name used by single_eth_run
+ln -sf zksync_os_zisk.bin "$ZKSYNCOS_DIR/zksync_os/app.bin"
+ln -sf zksync_os_zisk.elf "$ZKSYNCOS_DIR/zksync_os/app.elf"
 
 # Run eth_runner in forward mode with benchmarking
 echo "Running eth_runner..."
@@ -53,12 +57,14 @@ export VERBOSE_ORACLE=1 # Uncomment to see detailed oracle query logs
 SKIP_SIM_FLAG=""
 if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
     echo "SKIP_SIMULATION=1: Skipping ZisK emulation (bootloader only)" >> /tmp/zisk-bench.log
-    SKIP_SIM_FLAG="--only-forward"
+    SKIP_SIM_FLAG="--skip-witness"
 fi
 
+# Use single-eth-run which uses Ethereum storage with Keccak MPT (matches ZisK build)
+# pectra feature enables type 3 (blob) and type 4 (EIP-7702) transaction support
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
-    --features "rig/zisk-witness,rig/no_print,rig/unlimited_native" \
-    -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/zisk-bench.log 2>&1
+    --features "pectra,rig/zisk-witness,rig/no_print,rig/unlimited_native" \
+    -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/zisk-bench.log 2>&1
 cd "$REPO_ROOT"
 
 echo ""
@@ -66,4 +72,4 @@ echo "Log: /tmp/zisk-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(\[GUEST\]|process_rom\(\) steps|(\[ORACLE\] (Query breakdown|Total queries|Transactions processed|Queries by transaction)|cycles to finish|Native used|Effective cycles))" /tmp/zisk-bench.log || true
+grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*G2 deserialization|\[GUEST\].*Withdrawals root|\[GUEST\].*Finished processing|All good)" /tmp/zisk-bench.log || true

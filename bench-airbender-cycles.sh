@@ -10,9 +10,12 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
-# Default to block with actual transactions (155 txs, ~12.8M gas)
-# Block 23598300 is empty (0 txs) but has Keccak MPT witness
-BLOCK_NUMBER="${1:-23598300}"
+# Default to block with Keccak MPT witness (requires block_hashes.json)
+# Block 22244135 has 155 txs (~12.8M gas) but missing block_hashes.json
+# Block 23598300 is empty (0 txs) but has all required files for Keccak MPT
+BLOCK_NUMBER="${1:-24198369}"  # Ethereum block with 426 txs, ~45M gas
+# BLOCK_NUMBER="${1:-22244135}"
+# BLOCK_NUMBER="${1:-19299001}"
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"
@@ -29,7 +32,7 @@ echo ""
 echo "Building Airbender binary..."
 {
     cd "$ZKSYNCOS_DIR/zksync_os"
-    FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,print_debug_info" ./build.sh --machine airbender
+    FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,print_debug_info,cycle_marker" ./build.sh --machine airbender
     cd "$REPO_ROOT"
 } >> /tmp/airbender-bench.log 2>&1
 
@@ -75,16 +78,19 @@ if [[ -f "$BLOCK_DIR/witness.json" ]]; then
     if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
         SKIP_SIM_FLAG="--skip-witness"
     fi
+    # pectra feature enables type 3 (blob) and type 4 (EIP-7702) transaction support
+    # cycle_marker enables cycle count output from the simulator
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
-        --features "rig/unlimited_native" \
+        --features "pectra,rig/unlimited_native,cycle_marker" \
         -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
 elif [[ -f "$BLOCK_DIR/prestatetrace.json" ]]; then
     echo "Using single-run (flat storage model with prestatetrace.json)" >> /tmp/airbender-bench.log
     if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
         SKIP_SIM_FLAG="--only-forward"
     fi
+    # cycle_marker enables cycle count output from the simulator
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
-        --features "rig/unlimited_native" \
+        --features "rig/unlimited_native,cycle_marker" \
         -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
 else
     echo "ERROR: Block directory doesn't have required files (witness.json or prestatetrace.json)" >> /tmp/airbender-bench.log
@@ -97,4 +103,4 @@ echo "Log: /tmp/airbender-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(Running block:|Block gas used:|Simulator.*executed|Native used|Effective cycles|cycles to finish|Took.*cycles|\[GUEST\]|GasMismatch|panicked)" /tmp/airbender-bench.log || true
+grep -E "(Running block:|Block gas used:|Simulator.*executed|Native used|Effective cycles|net cycles|Total delegations|cycles to finish|Took.*cycles|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\]|GasMismatch|panicked|All good)" /tmp/airbender-bench.log || true
