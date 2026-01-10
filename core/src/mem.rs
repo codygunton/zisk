@@ -439,18 +439,16 @@ impl Mem {
     /// * `regs` - Register file (for writing overflow flag to x12)
     pub fn handle_u256_delegation(&mut self, x10: u64, x11: u64, x12: u32, regs: &mut [u64; 32]) {
         use crate::u256::{execute_u256_op, u256_from_limbs, u256_to_limbs};
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-        // Track U256 operations globally
-        static mut U256_OP_COUNT: u64 = 0;
-        static mut U256_FIRST_CALL: bool = true;
+        // Track U256 operations globally using atomics
+        static U256_OP_COUNT: AtomicU64 = AtomicU64::new(0);
+        static U256_FIRST_CALL: AtomicBool = AtomicBool::new(true);
 
-        unsafe {
-            if U256_FIRST_CALL {
-                eprintln!("[U256-DELEGATION] First U256 CSR 0x7ca delegation call - U256 delegation is ACTIVE");
-                U256_FIRST_CALL = false;
-            }
-            U256_OP_COUNT += 1;
+        if U256_FIRST_CALL.swap(false, Ordering::Relaxed) {
+            eprintln!("[U256-DELEGATION] First U256 CSR 0x7ca delegation call - U256 delegation is ACTIVE");
         }
+        let op_count = U256_OP_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
 
         // Read operand A using volatile pattern (8 x u32 = 32 bytes)
         let mut a_limbs = [0u32; 8];
@@ -478,15 +476,12 @@ impl Mem {
         let b = u256_from_limbs(&b_limbs);
         let control = (x12 & 0xFF) as u8;
 
-        // Debug - log periodically and also final count
-        unsafe {
-            // Print every 10000th operation to track progress
-            if U256_OP_COUNT <= 5 || U256_OP_COUNT % 10000 == 0 {
-                eprintln!(
-                    "[U256] #{} ctrl={:#04x} x10={:#x} x11={:#x} a={:?} b={:?}",
-                    U256_OP_COUNT, control, x10, x11, a_limbs, b_limbs
-                );
-            }
+        // Debug - log periodically to track progress
+        if op_count <= 5 || op_count % 10000 == 0 {
+            eprintln!(
+                "[U256] #{} ctrl={:#04x} x10={:#x} x11={:#x} a={:?} b={:?}",
+                op_count, control, x10, x11, a_limbs, b_limbs
+            );
         }
 
         let (result, overflow) = execute_u256_op(a, b, control);
@@ -494,13 +489,11 @@ impl Mem {
         // Write result back to memory at x10 using volatile pattern
         let result_limbs = u256_to_limbs(result);
 
-        unsafe {
-            if U256_OP_COUNT <= 5 || U256_OP_COUNT % 10000 == 0 {
-                eprintln!(
-                    "[U256] #{} result={:?} overflow={} -> writing to {:#x}",
-                    U256_OP_COUNT, result_limbs, overflow, x10
-                );
-            }
+        if op_count <= 5 || op_count % 10000 == 0 {
+            eprintln!(
+                "[U256] #{} result={:?} overflow={} -> writing to {:#x}",
+                op_count, result_limbs, overflow, x10
+            );
         }
 
         for i in 0..8 {
