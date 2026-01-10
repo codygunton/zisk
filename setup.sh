@@ -28,14 +28,19 @@ cargo build -p ziskemu -p cargo-zisk -p ziskclib --release
 echo ""
 echo "=== Building zksync-os for Zisk ==="
 cd "$ZKSYNCOS_DIR/zksync_os"
-FEATURES="proving,eth_runner,print_debug_info" ./build.sh --machine zisk
+FEATURES="proving,print_debug_info,delegation,global-alloc" ./build.sh --machine zisk
 cd "$REPO_ROOT"
 
-# ROM setup
-echo ""
-echo "=== Running ROM setup ==="
+# ROM setup (skip if no proving key available)
 PROVING_KEY="${PROVING_KEY:-$REPO_ROOT/provingKey}"
-./target/release/cargo-zisk rom-setup --elf "$OUTPUT_ELF" --proving-key "$PROVING_KEY" -v
+if [[ ! -d "$PROVING_KEY" ]]; then
+    echo ""
+    echo "=== Skipping ROM setup (no proving key at $PROVING_KEY) ==="
+else
+    echo ""
+    echo "=== Running ROM setup ==="
+    ./target/release/cargo-zisk rom-setup --elf "$OUTPUT_ELF" --proving-key "$PROVING_KEY" -v
+fi
 
 echo ""
 echo "=== Setup complete ==="
