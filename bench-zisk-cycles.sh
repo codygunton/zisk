@@ -72,4 +72,4 @@ echo "Log: /tmp/zisk-bench.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*G2 deserialization|\[GUEST\].*Withdrawals root|\[GUEST\].*Finished processing|All good)" /tmp/zisk-bench.log || true
+grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*G2 deserialization|\[GUEST\].*Withdrawals root|\[GUEST\].*Finished processing|\[GUEST\].*Using ZisK Keccak|All good)" /tmp/zisk-bench.log || true
