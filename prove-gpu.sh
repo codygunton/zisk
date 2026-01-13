@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# Prove zksync-os execution with GPU
-# Usage: ./prove-gpu.sh [BLOCK_NUMBER]
-# Default block: 22244135
+# Prove with GPU using ZisK test vectors
+# Usage: ./prove-gpu.sh
 
-BLOCK_NUMBER="${1:-22244135}"
-INPUTS_BIN="/tmp/inputs/${BLOCK_NUMBER}_inputs.bin"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
 ./target/release/cargo-zisk prove \
-    -e zksync-os/zksync_os/zksync_os_zisk.elf \
-    -i "$INPUTS_BIN" \
+    -e zisk-testvectors/pessimistic-proof/elf/pp-keccakf.elf \
+    -i zisk-testvectors/pessimistic-proof/inputs/pp_input_1_1.bin \
     --witness-lib ./target/release/libzisk_witness.so \
     --proving-key ./provingKey \
     -t 4 \
-    -vvv
+    -v
