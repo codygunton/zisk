@@ -105,10 +105,6 @@ use std::sync::{Arc, Mutex};
 /// CSR 0x7c0 (NON_DETERMINISM_CSR) memory-mapped address
 pub const ORACLE_CSR_ADDR: u64 = 0xa000be00;
 
-/// CSR 0x7c7 (BLAKE2_ROUND_DELEGATION) memory-mapped address
-/// Used for Blake2s round function delegation in zksync-os
-pub const BLAKE2_CSR_ADDR: u64 = 0xa000be38;
-
 /// CSR 0x7ca (U256_OPS_WITH_CONTROL) memory-mapped address
 /// Used for U256 arithmetic delegation in zksync-os
 /// Calculated as: 0xa0008000 + 0x7ca * 8 = 0xa000be50
@@ -346,12 +342,13 @@ pub struct Mem {
     pub read_sections: Vec<MemSection>,
     pub write_section: MemSection,
     pub free_input: u64,
+    // DOTHIS: you didn't answer these questions
+    // Q?: All of this seems weirdly located. Are there more natural locations?
     /// Optional oracle callback for CSR 0x7c0 reads/writes.
     pub oracle_callback: Option<OracleCallback>,
-    /// Enable Blake2s CSR 0x7c7 delegation (for zksync-os proving)
-    pub blake2_enabled: bool,
     /// Enable U256 CSR 0x7ca delegation (for zksync-os proving)
     pub u256_enabled: bool,
+    // Q?: should these uart methods actually be here? seems weird
     /// UART output mode
     pub uart_mode: UartMode,
     /// Optional UART callback for custom output handling
@@ -373,7 +370,6 @@ impl fmt::Debug for Mem {
             .field("write_section", &self.write_section)
             .field("free_input", &self.free_input)
             .field("oracle_callback", &self.oracle_callback.as_ref().map(|_| "<callback>"))
-            .field("blake2_enabled", &self.blake2_enabled)
             .field("u256_enabled", &self.u256_enabled)
             .field("uart_mode", &self.uart_mode)
             .field("uart_callback", &self.uart_callback.as_ref().map(|_| "<callback>"))
@@ -389,7 +385,6 @@ impl Mem {
             write_section: MemSection::new(),
             free_input: 0,
             oracle_callback: None,
-            blake2_enabled: false,
             u256_enabled: false,
             uart_mode: UartMode::default(),
             uart_callback: None,
@@ -400,11 +395,6 @@ impl Mem {
     /// Set the oracle callback for CSR 0x7c0 reads/writes.
     pub fn set_oracle_callback(&mut self, callback: OracleCallback) {
         self.oracle_callback = Some(callback);
-    }
-
-    /// Enable Blake2s CSR 0x7c7 delegation (for zksync-os proving)
-    pub fn enable_blake2_delegation(&mut self) {
-        self.blake2_enabled = true;
     }
 
     /// Enable U256 CSR 0x7ca delegation (for zksync-os proving)
@@ -936,135 +926,6 @@ impl Mem {
             }
         }
 
-        // Note: Blake2 CSR 0x7c7 writes are handled by the emulator (emu.rs)
-        // which has access to register values. See Emu::handle_blake2_if_needed().
-    }
-
-    /// Check if a write address is the Blake2 CSR
-    #[inline]
-    pub fn is_blake2_csr_write(&self, addr: u64) -> bool {
-        addr == BLAKE2_CSR_ADDR && self.blake2_enabled
-    }
-
-    /// Handle Blake2s CSR 0x7c7 delegation
-    ///
-    /// Performs Blake2s mixing function using the provided register values,
-    /// reading/writing state from/to memory.
-    ///
-    /// # Arguments
-    /// * `x10` - Pointer to state (8 u32) + extended_state (16 u32)
-    /// * `x11` - Pointer to input buffer (16 u32)
-    /// * `x12` - Round bitmask (power of 2)
-    /// * `x13` - Control flags
-    pub fn handle_blake2_delegation(&mut self, x10: u64, x11: u64, x12: u32, x13: u32) {
-        use crate::blake2s::{
-            mixing_function, BLAKE2S_BLOCK_SIZE_BYTES, BLAKE2S_BLOCK_SIZE_U32_WORDS,
-            BLAKE2S_EXTENDED_STATE_WIDTH_IN_U32_WORDS, BLAKE2S_STATE_WIDTH_IN_U32_WORDS,
-            CONFIGURED_IV, IV, SIGMAS, TEST_IF_COMPRESSION_MODE_MASK, TEST_IF_INPUT_IS_RIGHT_NODE_MASK,
-            TEST_IF_LAST_ROUND_MASK,
-        };
-
-        // Validate pointers - x10 and x11 must be non-zero valid addresses
-        if x10 == 0 || x11 == 0 {
-            eprintln!(
-                "[BLAKE2] WARNING: Invalid pointers x10=0x{:x} x11=0x{:x}, skipping delegation",
-                x10, x11
-            );
-            return;
-        }
-
-        // Parse control flags
-        let mode_compression = (x13 & TEST_IF_COMPRESSION_MODE_MASK) != 0;
-        let last_round = (x13 & TEST_IF_LAST_ROUND_MASK) != 0;
-        let compression_mode_node_is_right = (x13 & TEST_IF_INPUT_IS_RIGHT_NODE_MASK) != 0;
-
-        // Get round index from bitmask (power of 2)
-        let permutation_index = x12.trailing_zeros() as usize;
-
-        // Read state (8 u32) and extended_state (16 u32) from x10
-        let mut state = [0u32; BLAKE2S_STATE_WIDTH_IN_U32_WORDS];
-        let mut extended_state = [0u32; BLAKE2S_EXTENDED_STATE_WIDTH_IN_U32_WORDS];
-
-        for i in 0..BLAKE2S_STATE_WIDTH_IN_U32_WORDS {
-            state[i] = self.read(x10 + (i * 4) as u64, 4) as u32;
-        }
-        for i in 0..BLAKE2S_EXTENDED_STATE_WIDTH_IN_U32_WORDS {
-            extended_state[i] =
-                self.read(x10 + ((BLAKE2S_STATE_WIDTH_IN_U32_WORDS + i) * 4) as u64, 4) as u32;
-        }
-
-        // Read input buffer (16 u32) from x11
-        let mut input = [0u32; BLAKE2S_BLOCK_SIZE_U32_WORDS];
-        for i in 0..BLAKE2S_BLOCK_SIZE_U32_WORDS {
-            input[i] = self.read(x11 + (i * 4) as u64, 4) as u32;
-        }
-
-        // Perform Blake2s computation
-        if mode_compression {
-            // Compression mode
-            if permutation_index == 0 {
-                // Initialize extended state for compression
-                for i in 0..8 {
-                    extended_state[i] = CONFIGURED_IV[i];
-                    extended_state[i + 8] = IV[i];
-                }
-                extended_state[12] ^= BLAKE2S_BLOCK_SIZE_BYTES as u32;
-                extended_state[14] ^= 0xffffffff;
-            }
-
-            // Build message buffer based on node ordering
-            let mut buffer = [0u32; BLAKE2S_BLOCK_SIZE_U32_WORDS];
-            if compression_mode_node_is_right {
-                buffer[..8].copy_from_slice(&input[..8]);
-                buffer[8..].copy_from_slice(&state);
-            } else {
-                buffer[..8].copy_from_slice(&state);
-                buffer[8..].copy_from_slice(&input[..8]);
-            }
-
-            let sigma = &SIGMAS[permutation_index];
-            mixing_function(&mut extended_state, &buffer, sigma);
-        } else {
-            // Normal mode
-            if permutation_index == 0 {
-                // Initialize extended state for normal mode
-                for i in 0..8 {
-                    extended_state[i] = state[i];
-                }
-                extended_state[8] = IV[0];
-                extended_state[9] = IV[1];
-                extended_state[10] = IV[2];
-                extended_state[11] = IV[3];
-                extended_state[13] = IV[5];
-                extended_state[15] = IV[7];
-                // Note: extended_state[12] and [14] are set by guest before CSR write
-            }
-
-            let sigma = &SIGMAS[permutation_index];
-            mixing_function(&mut extended_state, &input, sigma);
-        }
-
-        // Update state if last round
-        if last_round {
-            if mode_compression {
-                state = CONFIGURED_IV;
-            }
-            for i in 0..8 {
-                state[i] ^= extended_state[i] ^ extended_state[i + 8];
-            }
-        }
-
-        // Write state and extended_state back to x10
-        for i in 0..BLAKE2S_STATE_WIDTH_IN_U32_WORDS {
-            self.write_silent(x10 + (i * 4) as u64, state[i] as u64, 4);
-        }
-        for i in 0..BLAKE2S_EXTENDED_STATE_WIDTH_IN_U32_WORDS {
-            self.write_silent(
-                x10 + ((BLAKE2S_STATE_WIDTH_IN_U32_WORDS + i) * 4) as u64,
-                extended_state[i] as u64,
-                4,
-            );
-        }
     }
 
     /// Write a u64 value to the memory write section, based on the provided address and width

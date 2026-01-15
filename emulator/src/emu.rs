@@ -22,9 +22,9 @@ use data_bus::DataBusTrait;
 use zisk_common::{EmuTrace, EmuTraceStart};
 use zisk_core::zisk_ops::ZiskOp;
 use zisk_core::{
-    EmulationMode, InstContext, Mem, OracleCallback, ZiskInst, ZiskOperationType, ZiskRom,
-    FREG_F0, FREG_INST, FREG_RA, FREG_X0, OUTPUT_ADDR, ROM_ENTRY, SRC_C, SRC_IMM, SRC_IND, SRC_MEM,
-    SRC_REG, SRC_STEP, STORE_IND, STORE_MEM, STORE_NONE, STORE_REG,
+    EmulationMode, InstContext, Mem, OracleCallback, ZiskInst, ZiskOperationType, ZiskRom, FREG_F0,
+    FREG_INST, FREG_RA, FREG_X0, OUTPUT_ADDR, ROM_ENTRY, SRC_C, SRC_IMM, SRC_IND, SRC_MEM, SRC_REG,
+    SRC_STEP, STORE_IND, STORE_MEM, STORE_NONE, STORE_REG,
 };
 
 /// ZisK emulator structure, containing the ZisK rom, the list of ZisK operations, and the
@@ -1019,9 +1019,6 @@ impl<'a> Emu<'a> {
                 if self.ctx.do_stats {
                     self.ctx.stats.on_memory_write(addr, 8, val);
                 }
-
-                // Handle Blake2 CSR 0x7c7 delegation if needed
-                self.handle_blake2_if_needed(addr);
                 // Handle U256 CSR 0x7ca delegation if needed
                 self.handle_u256_if_needed(addr);
             }
@@ -1049,8 +1046,6 @@ impl<'a> Emu<'a> {
                     self.ctx.stats.on_memory_write(addr, instruction.ind_width, val);
                 }
 
-                // Handle Blake2 CSR 0x7c7 delegation if needed
-                self.handle_blake2_if_needed(addr);
                 // Handle U256 CSR 0x7ca delegation if needed
                 self.handle_u256_if_needed(addr);
             }
@@ -1058,21 +1053,6 @@ impl<'a> Emu<'a> {
                 "Emu::store_c() Invalid store={} pc={}",
                 instruction.store, self.ctx.inst_ctx.pc
             ),
-        }
-    }
-
-    /// Handle Blake2 CSR 0x7c7 delegation if the write address matches.
-    ///
-    /// This is called after memory writes to check if Blake2 delegation should be triggered.
-    /// Uses register values x10-x13 for the Blake2 operation.
-    #[inline(always)]
-    fn handle_blake2_if_needed(&mut self, addr: u64) {
-        if self.ctx.inst_ctx.mem.is_blake2_csr_write(addr) {
-            let x10 = self.ctx.inst_ctx.regs[10];
-            let x11 = self.ctx.inst_ctx.regs[11];
-            let x12 = self.ctx.inst_ctx.regs[12] as u32;
-            let x13 = self.ctx.inst_ctx.regs[13] as u32;
-            self.ctx.inst_ctx.mem.handle_blake2_delegation(x10, x11, x12, x13);
         }
     }
 
@@ -1616,8 +1596,7 @@ impl<'a> Emu<'a> {
         // Set oracle callback after context creation (context creation resets memory)
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
-            // Enable Blake2 and U256 delegation when oracle is active (for zksync-os proving)
-            self.ctx.inst_ctx.mem.enable_blake2_delegation();
+            // Enable U256 delegation when oracle is active (for zksync-os proving)
             self.ctx.inst_ctx.mem.enable_u256_delegation();
         }
 
@@ -1844,8 +1823,7 @@ impl<'a> Emu<'a> {
         // Set oracle callback after context creation (context creation resets memory)
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
-            // Enable Blake2 and U256 delegation when oracle is active (for zksync-os proving)
-            self.ctx.inst_ctx.mem.enable_blake2_delegation();
+            // Enable U256 delegation when oracle is active (for zksync-os proving)
             self.ctx.inst_ctx.mem.enable_u256_delegation();
         }
 
