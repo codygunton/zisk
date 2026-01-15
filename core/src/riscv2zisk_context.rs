@@ -871,6 +871,8 @@ impl Riscv2ZiskContext<'_> {
         // Per RISC-V spec: JALR clears only bit 0 of the target address (0xfffffffffffffffe),
         // not bits 0 and 1. This allows jumping to 2-byte aligned targets when the C extension
         // is enabled.
+        // WORKTODO: AI thought this was necessary to execute zksync-os but i don't recall what it
+        // supposedly unblocked...
         const JALR_MASK: u64 = 0xfffffffffffffffe; // Clear only bit 0
         if (i.imm % 4) == 0 {
             let mut zib = ZiskInstBuilder::new_from_riscv(rom_address, i.inst.clone());

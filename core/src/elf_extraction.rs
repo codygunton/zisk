@@ -85,6 +85,13 @@ pub fn collect_elf_payload_from_bytes(file_data: &[u8]) -> Result<ElfPayload, Bo
                 let mut data = raw.to_vec();
                 // For executable sections, only ensure 2-byte alignment (C extension uses 16-bit instructions)
                 // For data sections, align to 4 bytes
+                // Q?: why is this an issue only now for zksync-os? Zisk already supported C
+                // extension
+                // A: Previously, ZisK only loaded from segments (program headers), not sections.
+                // Section-level loading exposes alignment issues that segment loading masked.
+                // The C extension uses 16-bit instructions, so executable sections need 2-byte
+                // alignment, while data sections still need 4-byte alignment for word access.
+                // DOTHIS: replace the above with a very succinct comnment explaining this
                 let alignment = if is_exec { 2 } else { 4 };
                 while data.len() % alignment != 0 {
                     data.pop();

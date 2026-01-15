@@ -5,6 +5,13 @@ use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
 use zisk_oracle::processors::{ProtocolAwareReplayOracle, Replay64Oracle, ReplayOracle};
 use zisk_oracle::ZiskOracle;
 
+// Q?: This oracle callback stuff is extermely spaghetti. Is there a light-touch refactor that
+// would improve on this?
+// A: The complexity comes from needing to support multiple oracle types (ZiskOracle, ReplayOracle,
+// Replay64Oracle, ProtocolAwareReplayOracle) through a single OracleCallback type. A light-touch
+// improvement: define an `Oracle` trait with `read(&self) -> u64` and `write(&mut self, u64)`,
+// then have Mem hold `Option<Box<dyn Oracle>>` instead of the callback. This removes Arc<Mutex>
+// wrapping from user code and makes the interface cleaner.
 /// Creates an `OracleCallback` that wraps a `ZiskOracle`.
 ///
 /// The callback routes reads and writes to the appropriate oracle methods.

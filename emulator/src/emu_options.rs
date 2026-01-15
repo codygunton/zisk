@@ -85,6 +85,7 @@ pub struct EmuOptions {
     /// Requires options: -S -X
     #[clap(short = 'D', long, value_name = "TOP_ROI_DETAIL", default_value = "false")]
     pub top_roi_detail: bool,
+    /// DOTHIS: rename to zksyncos_oracle and zksyncos_uart
     /// Enable oracle support for CSR 0x7c0 queries (e.g., zksync-os block metadata).
     /// When enabled, oracle queries are handled by the built-in oracle system.
     #[clap(long, value_name = "ORACLE", default_value = "false")]

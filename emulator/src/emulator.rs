@@ -26,6 +26,10 @@ use std::{
 };
 use sysinfo::System;
 use zisk_common::EmuTrace;
+// Q?: why the term "callback"? when is the oracle funtion executed?
+// A: "Callback" because the emulator "calls back" into user-provided code when hitting a CSR
+// read/write. It's executed synchronously during emulation whenever the guest accesses CSR 0x7c0.
+// A clearer name might be `OracleHandler` or just `Oracle`.
 use zisk_core::{OracleCallback, Riscv2zisk, ZiskRom};
 
 pub trait Emulator {
@@ -118,6 +122,7 @@ impl ZiskEmulator {
             .map(|(output, _regs)| output)
     }
 
+    // Q?: What's a better name? _with_zisk_output?
     /// Processes a Zisk rom and returns both output buffer and final register values.
     ///
     /// This is useful for compatibility with airbender which reads output from registers x10-x17.

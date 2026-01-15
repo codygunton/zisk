@@ -32,7 +32,13 @@ pub struct Stats {
 pub trait ZiskWitnessLibrary<F: PrimeField64> {
     fn set_stdin(&self, stdin: ZiskStdin);
     fn execution_result(&self) -> Option<(ZiskExecutionResult, ExecutorStats)>;
-
+    // Q?: is this callback changing throughout exeuction? how often?
+    // A: No, the callback is set once before execution starts and remains constant throughout.
+    // It's called every time the guest reads/writes CSR 0x7c0, which can be thousands of times
+    // per block (once per oracle query word). The callback itself maintains internal state
+    // (query buffers, response iterators) but the callback reference doesn't change.
+    // DOTHIS: since this callback is only set once, let's not use a setter function, it's
+    // misleading.
     /// Sets the oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
     ///
     /// This callback will be invoked during emulator execution when the program
