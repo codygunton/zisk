@@ -342,13 +342,10 @@ pub struct Mem {
     pub read_sections: Vec<MemSection>,
     pub write_section: MemSection,
     pub free_input: u64,
-    // DOTHIS: you didn't answer these questions
-    // Q?: All of this seems weirdly located. Are there more natural locations?
     /// Optional oracle callback for CSR 0x7c0 reads/writes.
     pub oracle_callback: Option<OracleCallback>,
     /// Enable U256 CSR 0x7ca delegation (for zksync-os proving)
     pub u256_enabled: bool,
-    // Q?: should these uart methods actually be here? seems weird
     /// UART output mode
     pub uart_mode: UartMode,
     /// Optional UART callback for custom output handling

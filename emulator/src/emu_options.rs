@@ -85,15 +85,14 @@ pub struct EmuOptions {
     /// Requires options: -S -X
     #[clap(short = 'D', long, value_name = "TOP_ROI_DETAIL", default_value = "false")]
     pub top_roi_detail: bool,
-    /// DOTHIS: rename to zksyncos_oracle and zksyncos_uart
     /// Enable oracle support for CSR 0x7c0 queries (e.g., zksync-os block metadata).
     /// When enabled, oracle queries are handled by the built-in oracle system.
-    #[clap(long, value_name = "ORACLE", default_value = "false")]
-    pub oracle: bool,
+    #[clap(long, value_name = "ZKSYNCOS_ORACLE", default_value = "false")]
+    pub zksyncos_oracle: bool,
     /// UART output mode: silent, stdout (default), or stderr.
     /// stderr mode adds "[GUEST] " prefix and line-buffers for cleaner output.
-    #[clap(long, value_name = "UART", default_value = "stdout")]
-    pub uart: String,
+    #[clap(long, value_name = "ZKSYNCOS_UART", default_value = "stdout")]
+    pub zksyncos_uart: String,
 }
 
 impl Default for EmuOptions {
@@ -121,8 +120,8 @@ impl Default for EmuOptions {
             top_roi: 10,
             top_roi_detail: false,
             legacy_stats: false,
-            oracle: false,
-            uart: "stdout".to_string(),
+            zksyncos_oracle: false,
+            zksyncos_uart: "stdout".to_string(),
         }
     }
 }
@@ -150,8 +149,8 @@ impl fmt::Display for EmuOptions {
         writeln!(f, "TOP_ROI: {:?}", self.top_roi)?;
         writeln!(f, "ROI_CALLERS: {:?}", self.roi_callers)?;
         writeln!(f, "TOP_ROI_DETAIL: {:?}", self.top_roi_detail)?;
-        writeln!(f, "ORACLE: {:?}", self.oracle)?;
-        writeln!(f, "UART: {:?}", self.uart)?;
+        writeln!(f, "ZKSYNCOS_ORACLE: {:?}", self.zksyncos_oracle)?;
+        writeln!(f, "ZKSYNCOS_UART: {:?}", self.zksyncos_uart)?;
         Ok(())
     }
 }
@@ -174,12 +173,12 @@ impl EmuOptions {
     ///
     /// Supported values: "silent", "stdout", "stderr"
     pub fn uart_mode(&self) -> UartMode {
-        match self.uart.as_str() {
+        match self.zksyncos_uart.as_str() {
             "silent" => UartMode::Silent,
             "stdout" => UartMode::Stdout,
             "stderr" => UartMode::Stderr,
             _ => {
-                eprintln!("Warning: Unknown UART mode '{}', using stdout", self.uart);
+                eprintln!("Warning: Unknown UART mode '{}', using stdout", self.zksyncos_uart);
                 UartMode::Stdout
             }
         }

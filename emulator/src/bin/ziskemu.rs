@@ -15,11 +15,11 @@ fn main() {
         println!("ziskemu converts an ELF RISCV file into a ZISK rom or loads a ZISK rom file, emulates it with the provided input, and copies the output to console or a file");
     }
 
-    // Create oracle callback if oracle flag is set
+    // Create oracle callback if zksyncos_oracle flag is set
     // Uses ReplayOracle to replay u32 witness data directly.
     // The witness file from zksync-os contains u32 values in big-endian format.
     // The 64-bit guest handles combining u32 pairs into u64 via io_oracle.
-    let oracle_callback = if options.oracle {
+    let oracle_callback = if options.zksyncos_oracle {
         if let Some(ref inputs_path) = options.inputs {
             if options.verbose {
                 println!("Oracle support enabled - loading witness data from inputs file");
