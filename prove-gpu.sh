@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Prove with GPU using ZisK test vectors
-# Usage: ./prove-gpu.sh [ELF_FILE] [INPUT_FILE]
+# Usage: ./prove-gpu.sh [ELF_FILE] [INPUT_FILE] [OUTPUT_DIR] [WITNESS_FILE]
 #
 # Uses pessimistic-proof test vectors by default, or specify custom ELF/input.
+# Optional WITNESS_FILE for oracle-based programs like ZKsyncOS.
 #
 # Prerequisites:
 # - Build with GPU support: cargo build --release --features gpu
@@ -20,6 +21,18 @@ cd "$REPO_ROOT"
 ELF_FILE="${1:-zisk-testvectors/pessimistic-proof/elf/pp-keccakf.elf}"
 INPUT_FILE="${2:-zisk-testvectors/pessimistic-proof/inputs/pp_input_1_1.bin}"
 OUTPUT_DIR="${3:-tmp}"
+
+# Optional witness file for oracle-based programs
+WITNESS_FILE="${4:-}"
+WITNESS_ARG=""
+if [[ -n "$WITNESS_FILE" ]]; then
+    if [[ ! -f "$WITNESS_FILE" ]]; then
+        echo "ERROR: Witness file not found: $WITNESS_FILE"
+        exit 1
+    fi
+    WITNESS_ARG="--witness-file $WITNESS_FILE"
+    echo "Witness: $WITNESS_FILE"
+fi
 
 # Rust dylib requires std library in LD_LIBRARY_PATH
 RUST_STD_PATH="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib"
@@ -38,6 +51,7 @@ echo ""
 OUTPUT=$(./target/release/cargo-zisk prove \
     --elf "$ELF_FILE" \
     --input "$INPUT_FILE" \
+    $WITNESS_ARG \
     --witness-lib ./target/release/libzisk_witness.so \
     --proving-key ./provingKey \
     --output-dir "$OUTPUT_DIR" \

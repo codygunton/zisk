@@ -617,6 +617,7 @@ dependencies = [
  "zisk-oracle",
  "zisk-pil",
  "zisk-sdk",
+ "ziskemu",
  "zstd",
 ]
 
@@ -5772,6 +5773,7 @@ dependencies = [
  "rom-setup",
  "tracing",
  "zisk-common",
+ "zisk-core",
  "zisk-distributed-common",
  "zstd",
 ]

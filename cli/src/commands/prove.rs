@@ -1,5 +1,5 @@
 use crate::ux::print_banner;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use colored::Colorize;
 use proofman_common::ParamsGPU;
@@ -8,7 +8,9 @@ use zisk_build::ZISK_VERSION_MESSAGE;
 use zisk_common::io::ZiskStdin;
 #[cfg(feature = "stats")]
 use zisk_common::ExecutorStatsEvent;
-use zisk_sdk::{ProverClient, ZiskProveResult};
+use zisk_oracle::processors::Replay64Oracle;
+use zisk_sdk::{OracleCallback, ProverClient, ZiskProveResult};
+use ziskemu::create_replay64_oracle_callback;
 
 // Structure representing the 'prove' subcommand of cargo.
 #[derive(clap::Args)]
@@ -43,6 +45,12 @@ pub struct ZiskProve {
     /// Input path
     #[clap(short = 'i', long)]
     pub input: Option<PathBuf>,
+
+    /// ZKsyncOS witness file path (hex-encoded Vec<u32> from eth_runner).
+    /// When provided, creates a Replay64Oracle for oracle CSR operations.
+    /// This is required for proving programs that use oracle callbacks (like ZKsyncOS).
+    #[clap(long)]
+    pub witness_file: Option<PathBuf>,
 
     /// Setup folder path
     #[clap(short = 'k', long)]
@@ -123,13 +131,14 @@ impl ZiskProve {
         }
 
         let stdin = self.create_stdin()?;
+        let oracle_callback = self.create_oracle_callback()?;
 
         let emulator = if cfg!(target_os = "macos") { true } else { self.emulator };
 
         let (result, world_rank) = if emulator {
-            self.run_emu(stdin, gpu_params)?
+            self.run_emu(stdin, gpu_params, oracle_callback)?
         } else {
-            self.run_asm(stdin, gpu_params)?
+            self.run_asm(stdin, gpu_params, oracle_callback)?
         };
 
         if world_rank == 0 {
@@ -165,10 +174,36 @@ impl ZiskProve {
         Ok(stdin)
     }
 
+    fn create_oracle_callback(&self) -> Result<Option<OracleCallback>> {
+        if let Some(witness_path) = &self.witness_file {
+            if !witness_path.exists() {
+                return Err(anyhow::anyhow!(
+                    "Witness file not found at {:?}",
+                    witness_path.display()
+                ));
+            }
+
+            let witness_hex = std::fs::read_to_string(witness_path)
+                .with_context(|| format!("Failed to read witness file: {}", witness_path.display()))?;
+            let witness_bytes = hex::decode(witness_hex.trim())
+                .context("Failed to decode hex witness data")?;
+
+            let replay_oracle = Replay64Oracle::from_bytes_be(&witness_bytes);
+            let callback = create_replay64_oracle_callback(replay_oracle);
+
+            tracing::info!("Loaded witness file with {} bytes of oracle data", witness_bytes.len());
+
+            Ok(Some(callback))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn run_emu(
         &mut self,
         stdin: ZiskStdin,
         gpu_params: ParamsGPU,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<(ZiskProveResult, i32)> {
         let prover = ProverClient::builder()
             .emu()
@@ -188,6 +223,10 @@ impl ZiskProve {
             .print_command_info()
             .build()?;
 
+        if let Some(callback) = oracle_callback {
+            prover.set_oracle_callback(callback);
+        }
+
         let result = prover.prove(stdin)?;
         let world_rank = prover.world_rank();
 
@@ -198,6 +237,7 @@ impl ZiskProve {
         &mut self,
         stdin: ZiskStdin,
         gpu_params: ParamsGPU,
+        oracle_callback: Option<OracleCallback>,
     ) -> Result<(ZiskProveResult, i32)> {
         let prover = ProverClient::builder()
             .asm()
@@ -219,6 +259,10 @@ impl ZiskProve {
             .gpu(gpu_params)
             .print_command_info()
             .build()?;
+
+        if let Some(callback) = oracle_callback {
+            prover.set_oracle_callback(callback);
+        }
 
         let result = prover.prove(stdin)?;
         let world_rank = prover.world_rank();
