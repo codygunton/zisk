@@ -10,6 +10,7 @@ use proofman::{AggProofs, ProofInfo, ProofMan, ProvePhase, ProvePhaseInputs, Pro
 use proofman_common::{DebugInfo, ProofOptions};
 use std::{fs::File, io::Write, path::PathBuf};
 use zisk_common::{io::ZiskStdin, ExecutorStats, ProofLog, ZiskExecutionResult, ZiskLib};
+use zisk_core::OracleCallback;
 use zstd::Encoder;
 
 pub(crate) struct ProverBackend {
@@ -28,6 +29,10 @@ pub(crate) struct ProverBackend {
 }
 
 impl ProverBackend {
+    pub(crate) fn set_oracle_callback(&self, callback: OracleCallback) {
+        self.witness_lib.set_oracle_callback(callback);
+    }
+
     pub(crate) fn execute(
         &self,
         stdin: ZiskStdin,

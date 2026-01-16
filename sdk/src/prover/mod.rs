@@ -12,6 +12,7 @@ use crate::Proof;
 use anyhow::Result;
 use std::{path::PathBuf, time::Duration};
 use zisk_common::{io::ZiskStdin, ExecutorStats, ZiskExecutionResult};
+use zisk_core::OracleCallback;
 
 pub struct ZiskExecuteResult {
     pub execution: ZiskExecutionResult,
@@ -43,6 +44,8 @@ pub trait ProverEngine {
     fn local_rank(&self) -> i32;
 
     fn set_stdin(&self, stdin: ZiskStdin);
+
+    fn set_oracle_callback(&self, callback: OracleCallback);
 
     fn executed_steps(&self) -> u64;
 
@@ -100,6 +103,12 @@ impl<C: ZiskBackend> ZiskProver<C> {
     /// Set the standard input for the current proof.
     pub fn set_stdin(&self, stdin: ZiskStdin) {
         self.prover.set_stdin(stdin);
+    }
+
+    /// Set the oracle callback for CSR 0x7c0 oracle queries.
+    /// This is required for proving programs that use oracle callbacks (like ZKsyncOS).
+    pub fn set_oracle_callback(&self, callback: OracleCallback) {
+        self.prover.set_oracle_callback(callback);
     }
 
     /// Get the world rank of the prover. The world rank is the rank of the prover in the global MPI context.
