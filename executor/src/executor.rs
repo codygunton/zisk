@@ -250,7 +250,17 @@ impl<F: PrimeField64> ZiskExecutor<F> {
     /// # Returns
     /// A vector of `EmuTrace` instances representing minimal traces.
     fn execute_with_emulator(&self) -> MinimalTraces {
-        let min_traces = self.run_emulator(Self::NUM_THREADS, &mut self.stdin.lock().unwrap());
+        // Oracle replay requires single-threaded execution because the witness data is a
+        // sequential stream that can't be consumed by multiple threads in parallel.
+        let has_oracle = self.oracle_callback.lock().expect("oracle_callback lock").is_some();
+        let num_threads = if has_oracle {
+            tracing::info!("Using single-threaded execution for oracle replay");
+            1
+        } else {
+            Self::NUM_THREADS
+        };
+
+        let min_traces = self.run_emulator(num_threads, &mut self.stdin.lock().unwrap());
 
         // Store execute steps
         let steps = if let MinimalTraces::EmuTrace(min_traces) = &min_traces {
@@ -539,11 +549,13 @@ impl<F: PrimeField64> ZiskExecutor<F> {
         let input_data = stdin.read();
 
         // Settings for the emulator
-        // UART is silenced during parallel witness computation to avoid illegible interleaved output
+        // UART is silenced during parallel witness computation to avoid illegible interleaved output.
+        // When running single-threaded (e.g., for oracle replay), UART is enabled to help debug.
+        let uart_mode = if num_threads == 1 { "stderr" } else { "silent" };
         let emu_options = EmuOptions {
             chunk_size: Some(self.chunk_size),
             max_steps: Self::MAX_NUM_STEPS,
-            zksyncos_uart: "silent".to_string(),
+            zksyncos_uart: uart_mode.to_string(),
             ..EmuOptions::default()
         };
 
