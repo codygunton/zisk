@@ -20,3 +20,6 @@ The bench-zisk-cycles.sh script completes successfully, processing real Ethereum
 
 - Blake2s delegation (CSR 0x7C7) support was removed from ZisK as it is not needed for Ethereum execution. The earlier zisk-integration branches used Blake2s for the storage tree, but the current implementation uses Keccak.
 - U256 delegation (CSR 0x7CA) is still supported for BigInt arithmetic operations.
+
+# Tools
+gcc binutils for risc-v are installed as  riscv64-elf-foo (e.g.,  riscv64-elf-objdump).
