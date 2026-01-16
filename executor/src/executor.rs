@@ -539,9 +539,11 @@ impl<F: PrimeField64> ZiskExecutor<F> {
         let input_data = stdin.read();
 
         // Settings for the emulator
+        // UART is silenced during parallel witness computation to avoid illegible interleaved output
         let emu_options = EmuOptions {
             chunk_size: Some(self.chunk_size),
             max_steps: Self::MAX_NUM_STEPS,
+            zksyncos_uart: "silent".to_string(),
             ..EmuOptions::default()
         };
 
