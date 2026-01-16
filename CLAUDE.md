@@ -6,6 +6,10 @@ The cycle benchmarking/testing scripts:
 - ./bench-zisk-cycles.sh
 - ./bench-airbender-cycles.sh
 
+
+To develop proving code, including GPU code, use:
+ - ./prove-block-gpu.sh
+
 produce logs at /tmp/zisk-bench.log and /tmp/airbender-bench.log respectively.
 
 You will NOT use needlessly long timeouts when running these. 90s is sufficient for each.
