@@ -238,6 +238,28 @@ impl ZiskEmulator {
         num_threads: usize,
         oracle_callback: Option<OracleCallback>,
     ) -> Result<Vec<EmuTrace>, ZiskEmulatorErr> {
+        // DEBUG: Use run_with_oracle path (like benchmark) instead of par_run_with_oracle
+        if std::env::var("ZISK_DEBUG_RUN_MODE").map(|v| v == "1").unwrap_or(false) {
+            eprintln!("[DEBUG] Using run_with_oracle path instead of par_run_with_oracle");
+            // Must clear chunk_size to avoid callback requirement
+            let mut debug_options = options.clone();
+            debug_options.chunk_size = None;
+            let mut emu = Emu::new(rom);
+            emu.run_with_oracle(
+                inputs.to_owned(),
+                &debug_options,
+                None::<Box<dyn Fn(EmuTrace)>>,
+                oracle_callback,
+            );
+
+            if !emu.terminated() {
+                panic!("Emulation did not complete");
+            }
+
+            // Return empty traces - we're just testing if execution succeeds
+            return Ok(vec![]);
+        }
+
         let mut minimal_traces = vec![Vec::new(); num_threads];
 
         minimal_traces.par_iter_mut().enumerate().for_each(|(thread_id, emu_trace)| {
@@ -274,6 +296,58 @@ impl ZiskEmulator {
             vec_traces.push(std::mem::take(&mut minimal_traces[x][y]));
         }
 
+        // Debug: Log first and last few traces to verify integrity (including registers)
+        eprintln!("[TRACE-DEBUG] Collected {} traces", vec_traces.len());
+
+        // Also check for suspicious register values
+        let mut suspicious_count = 0;
+        for (i, trace) in vec_traces.iter().enumerate() {
+            // Check if regs[1] looks like garbage (not a valid ROM address or small value)
+            let r1 = trace.start_state.regs[1];
+            let is_suspicious = r1 > 0x90000000 && r1 != 0xffffffff80000000; // High values that aren't valid
+            if i < 5 || is_suspicious {
+                eprintln!(
+                    "[TRACE-DEBUG] trace[{}]: pc=0x{:x}, step={}, steps={}, mem_reads={}, sp=0x{:x}, regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]{}",
+                    i,
+                    trace.start_state.pc,
+                    trace.start_state.step,
+                    trace.steps,
+                    trace.mem_reads.len(),
+                    trace.start_state.sp,
+                    trace.start_state.regs[0],
+                    trace.start_state.regs[1],
+                    trace.start_state.regs[2],
+                    trace.start_state.regs[3],
+                    if is_suspicious { " [SUSPICIOUS regs[1]]" } else { "" }
+                );
+                if is_suspicious {
+                    suspicious_count += 1;
+                    if suspicious_count >= 20 {
+                        eprintln!("[TRACE-DEBUG] ... (stopping after 20 suspicious traces)");
+                        break;
+                    }
+                }
+            }
+        }
+        if vec_traces.len() > 10 {
+            eprintln!("[TRACE-DEBUG] ...");
+            for (i, trace) in vec_traces.iter().enumerate().skip(vec_traces.len() - 5) {
+                eprintln!(
+                    "[TRACE-DEBUG] trace[{}]: pc=0x{:x}, step={}, steps={}, mem_reads={}, sp=0x{:x}, regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]",
+                    i,
+                    trace.start_state.pc,
+                    trace.start_state.step,
+                    trace.steps,
+                    trace.mem_reads.len(),
+                    trace.start_state.sp,
+                    trace.start_state.regs[0],
+                    trace.start_state.regs[1],
+                    trace.start_state.regs[2],
+                    trace.start_state.regs[3]
+                );
+            }
+        }
+
         Ok(vec_traces)
     }
 
@@ -290,6 +364,9 @@ impl ZiskEmulator {
         // Create a emulator instance with this rom
         let mut emu = Emu::new(rom);
 
+        // Enable U256 delegation for trace replay (needed to update regs[12] overflow flag)
+        emu.ctx.inst_ctx.mem.enable_u256_delegation();
+
         // Run the emulation
         emu.process_emu_trace(emu_trace, data_bus, with_mem_ops);
     }
@@ -305,6 +382,9 @@ impl ZiskEmulator {
     ) {
         // Create a emulator instance with this rom
         let mut emu = Emu::new(rom);
+
+        // Enable U256 delegation for trace replay (needed to update regs[12] overflow flag)
+        emu.ctx.inst_ctx.mem.enable_u256_delegation();
 
         // Run the emulation
         emu.process_emu_traces(min_traces, chunk_id, data_bus);

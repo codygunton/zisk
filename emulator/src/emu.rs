@@ -1075,6 +1075,48 @@ impl<'a> Emu<'a> {
         }
     }
 
+    /// Handle U256 CSR 0x7ca delegation for trace generation.
+    ///
+    /// Executes U256 delegation and records the overflow flag (regs[12]) to mem_reads.
+    /// This is used during GenerateMemReads mode.
+    #[inline(always)]
+    fn handle_u256_for_generation(&mut self, addr: u64, mem_reads: &mut Vec<u64>) {
+        if self.ctx.inst_ctx.mem.is_u256_csr_write(addr) {
+            let x10 = self.ctx.inst_ctx.regs[10];
+            let x11 = self.ctx.inst_ctx.regs[11];
+            let x12 = self.ctx.inst_ctx.regs[12] as u32;
+            self.ctx.inst_ctx.mem.handle_u256_delegation(
+                x10,
+                x11,
+                x12,
+                &mut self.ctx.inst_ctx.regs,
+            );
+            // Record the overflow flag (regs[12]) for replay
+            // During replay, we'll restore this value instead of re-executing U256
+            mem_reads.push(self.ctx.inst_ctx.regs[12]);
+        }
+    }
+
+    /// Handle U256 CSR 0x7ca delegation for trace replay.
+    ///
+    /// Instead of executing U256 delegation (which would read empty memory),
+    /// restores the overflow flag (regs[12]) from mem_reads.
+    /// This is used during ConsumeMemReads mode.
+    #[inline(always)]
+    fn handle_u256_for_replay(&mut self, addr: u64, mem_reads: &[u64], mem_reads_index: &mut usize) {
+        if self.ctx.inst_ctx.mem.is_u256_csr_write(addr) {
+            // Restore the overflow flag from mem_reads
+            debug_assert!(
+                *mem_reads_index < mem_reads.len(),
+                "U256 replay: mem_reads exhausted at index {} (len={})",
+                *mem_reads_index,
+                mem_reads.len()
+            );
+            self.ctx.inst_ctx.regs[12] = mem_reads[*mem_reads_index];
+            *mem_reads_index += 1;
+        }
+    }
+
     /// Store the 'c' register value based on the storage specified by the current instruction and
     /// log memory access if required
     #[inline(always)]
@@ -1115,6 +1157,9 @@ impl<'a> Emu<'a> {
 
                     self.ctx.inst_ctx.mem.write(address, value, 8);
                 }
+
+                // Handle U256 CSR 0x7ca delegation if needed, recording overflow flag
+                self.handle_u256_for_generation(address, mem_reads);
             }
             STORE_IND => {
                 // Calculate the value
@@ -1142,6 +1187,9 @@ impl<'a> Emu<'a> {
 
                     self.ctx.inst_ctx.mem.write(address, value, instruction.ind_width);
                 }
+
+                // Handle U256 CSR 0x7ca delegation if needed, recording overflow flag
+                self.handle_u256_for_generation(address, mem_reads);
             }
             _ => panic!(
                 "Emu::store_c_mem_reads_generate() Invalid store={} pc={}",
@@ -1192,6 +1240,9 @@ impl<'a> Emu<'a> {
                         *mem_reads_index += 1;
                     }
                 }
+
+                // Handle U256 CSR 0x7ca delegation - restore overflow flag from mem_reads
+                self.handle_u256_for_replay(address, mem_reads, mem_reads_index);
             }
             STORE_IND => {
                 // Calculate the memory address
@@ -1217,6 +1268,9 @@ impl<'a> Emu<'a> {
                         *mem_reads_index += 1;
                     }
                 }
+
+                // Handle U256 CSR 0x7ca delegation - restore overflow flag from mem_reads
+                self.handle_u256_for_replay(address, mem_reads, mem_reads_index);
             }
             _ => panic!(
                 "Emu::store_c_mem_reads_consume() Invalid store={} pc={}",
@@ -1307,6 +1361,9 @@ impl<'a> Emu<'a> {
                         data_bus.write_to_bus(MEM_BUS_ID, &payload);
                     }
                 }
+
+                // Handle U256 CSR 0x7ca delegation: restore overflow flag from mem_reads
+                self.handle_u256_for_replay(address, mem_reads, mem_reads_index);
             }
             STORE_IND => {
                 // Calculate the value
@@ -1370,6 +1427,9 @@ impl<'a> Emu<'a> {
                         data_bus.write_to_bus(MEM_BUS_ID, &payload);
                     }
                 }
+
+                // Handle U256 CSR 0x7ca delegation: restore overflow flag from mem_reads
+                self.handle_u256_for_replay(address, mem_reads, mem_reads_index);
             }
             _ => panic!(
                 "Emu::store_c_mem_reads_consume_databus() Invalid store={} pc={}",
@@ -1420,6 +1480,9 @@ impl<'a> Emu<'a> {
                         *mem_reads_index += 2;
                     }
                 }
+
+                // Handle U256 CSR 0x7ca delegation: restore overflow flag from mem_reads
+                self.handle_u256_for_replay(address, mem_reads, mem_reads_index);
             }
             STORE_IND => {
                 // Calculate the memory address
@@ -1443,9 +1506,12 @@ impl<'a> Emu<'a> {
                         *mem_reads_index += 2;
                     }
                 }
+
+                // Handle U256 CSR 0x7ca delegation: restore overflow flag from mem_reads
+                self.handle_u256_for_replay(address, mem_reads, mem_reads_index);
             }
             _ => panic!(
-                "Emu::store_c_mem_reads_consume_databus() Invalid store={} pc={}",
+                "Emu::store_c_mem_reads_consume_no_mem_ops() Invalid store={} pc={}",
                 instruction.store, self.ctx.inst_ctx.pc
             ),
         }
@@ -1837,11 +1903,32 @@ impl<'a> Emu<'a> {
         self.ctx.do_stats = options.stats || options.legacy_stats;
 
         // Set emulation mode
-        self.ctx.inst_ctx.emulation_mode = EmulationMode::GenerateMemReads;
+        // DEBUG: Allow bypassing GenerateMemReads mode for testing
+        if std::env::var("ZISK_DEBUG_MEM_MODE").map(|v| v == "1").unwrap_or(false) {
+            eprintln!("[DEBUG] Using EmulationMode::Mem instead of GenerateMemReads");
+            self.ctx.inst_ctx.emulation_mode = EmulationMode::Mem;
+        } else {
+            self.ctx.inst_ctx.emulation_mode = EmulationMode::GenerateMemReads;
+        }
 
         let mut emu_traces = Vec::new();
 
+        // Track previous PC to detect spin loops (e.g., zksync-os exit)
+        let mut prev_pc: u64 = 0;
+
         while !self.ctx.inst_ctx.end {
+            // Detect any self-loop (pc == prev_pc means jump to self)
+            // This is used by zksync-os to signal completion (both success and error)
+            if self.ctx.inst_ctx.pc == prev_pc {
+                eprintln!(
+                    "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
+                    self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
+                );
+                self.ctx.inst_ctx.end = true;
+                break;
+            }
+            prev_pc = self.ctx.inst_ctx.pc;
+
             let block_idx = self.ctx.inst_ctx.step / par_options.num_steps as u64;
             let is_my_block =
                 block_idx % par_options.num_threads as u64 == par_options.thread_id as u64;
@@ -2139,6 +2226,9 @@ impl<'a> Emu<'a> {
         mem_reads_index: &mut usize,
         data_bus: &mut DB,
     ) -> bool {
+        // Track mem_reads consumption for debugging
+        let start_index = *mem_reads_index;
+
         let instruction = self.rom.get_instruction(self.ctx.inst_ctx.pc);
 
         self.source_a_mem_reads_consume_databus(instruction, mem_reads, mem_reads_index, data_bus);
@@ -2175,7 +2265,39 @@ impl<'a> Emu<'a> {
 
         // #[cfg(feature = "sp")]
         // self.set_sp(instruction);
+        let prev_pc = self.ctx.inst_ctx.pc;
         self.set_pc(instruction);
+
+        // Debug: Check for invalid PC after set_pc
+        if self.ctx.inst_ctx.pc > 0x90000000 {
+            let consumed = *mem_reads_index - start_index;
+            panic!(
+                "[STEP-DEBUG] PC became invalid after set_pc:\n  prev_pc=0x{:x}, new_pc=0x{:x}\n  step={}, c=0x{:x}, a=0x{:x}, b=0x{:x}\n  flag={}, set_pc={}, jmp_offset1={}, jmp_offset2={}\n  source_a={}, source_b={}, store={}\n  a_offset_imm0={}, b_offset_imm0={}\n  mem_reads_consumed={}, mem_reads_index={}, mem_reads_len={}\n  regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]",
+                prev_pc,
+                self.ctx.inst_ctx.pc,
+                self.ctx.inst_ctx.step,
+                self.ctx.inst_ctx.c,
+                self.ctx.inst_ctx.a,
+                self.ctx.inst_ctx.b,
+                self.ctx.inst_ctx.flag,
+                instruction.set_pc,
+                instruction.jmp_offset1,
+                instruction.jmp_offset2,
+                instruction.a_src,
+                instruction.b_src,
+                instruction.store,
+                instruction.a_offset_imm0,
+                instruction.b_offset_imm0,
+                consumed,
+                *mem_reads_index,
+                mem_reads.len(),
+                self.ctx.inst_ctx.regs[0],
+                self.ctx.inst_ctx.regs[1],
+                self.ctx.inst_ctx.regs[2],
+                self.ctx.inst_ctx.regs[3],
+            );
+        }
+
         self.ctx.inst_ctx.end = instruction.end;
 
         self.ctx.inst_ctx.step += 1;
@@ -2244,6 +2366,35 @@ impl<'a> Emu<'a> {
         data_bus: &mut DB,
         with_mem_ops: bool,
     ) {
+        // Debug: Log trace start state
+        let step = emu_trace.start_state.step;
+        let pc = emu_trace.start_state.pc;
+
+        // Sanity check: PC should be in valid ROM range (ROM is typically < 0x90000000)
+        if pc > 0x90000000 || pc == 0 {
+            panic!(
+                "[COUNT-DEBUG] Invalid initial PC 0x{:x} in trace (step={}, steps={}, mem_reads={})",
+                pc,
+                step,
+                emu_trace.steps,
+                emu_trace.mem_reads.len()
+            );
+        }
+
+        // Log all traces being processed for debugging (including first 4 registers)
+        eprintln!(
+            "[COUNT-DEBUG] process_emu_trace: step={}, pc=0x{:x}, steps={}, mem_reads={}, sp=0x{:x}, regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]",
+            step,
+            pc,
+            emu_trace.steps,
+            emu_trace.mem_reads.len(),
+            emu_trace.start_state.sp,
+            emu_trace.start_state.regs[0],
+            emu_trace.start_state.regs[1],
+            emu_trace.start_state.regs[2],
+            emu_trace.start_state.regs[3]
+        );
+
         // Set initial state
         self.ctx.inst_ctx.pc = emu_trace.start_state.pc;
         self.ctx.inst_ctx.sp = emu_trace.start_state.sp;
@@ -2276,8 +2427,29 @@ impl<'a> Emu<'a> {
         chunk_id: usize,
         data_bus: &mut DB,
     ) {
+        // Debug: Check bounds
+        if chunk_id >= vec_traces.len() {
+            panic!(
+                "[EXPAND-DEBUG] chunk_id {} out of bounds (vec_traces.len()={})",
+                chunk_id,
+                vec_traces.len()
+            );
+        }
+
         // Set initial state
         let emu_trace_start = &vec_traces[chunk_id].start_state;
+
+        // Debug: Log first step of trace
+        if chunk_id < 5 || chunk_id % 1000 == 0 {
+            eprintln!(
+                "[EXPAND-DEBUG] chunk_id={}: pc=0x{:x}, step={}, steps={}, mem_reads={}",
+                chunk_id,
+                emu_trace_start.pc,
+                emu_trace_start.step,
+                vec_traces[chunk_id].steps,
+                vec_traces[chunk_id].mem_reads.len()
+            );
+        }
         self.ctx.inst_ctx.pc = emu_trace_start.pc;
         self.ctx.inst_ctx.sp = emu_trace_start.sp;
         self.ctx.inst_ctx.step = emu_trace_start.step;
