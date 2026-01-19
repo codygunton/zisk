@@ -146,7 +146,12 @@ pub struct ZiskExecutor<F: PrimeField64> {
     shmem_input_writer: [Arc<Mutex<Option<SharedMemoryWriter>>>; AsmServices::SERVICES.len()],
 
     /// Optional oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
+    /// DEPRECATED: Use `oracle_bytes` instead for proper per-thread oracle instances.
     oracle_callback: Mutex<Option<OracleCallback>>,
+
+    /// Raw oracle bytes for creating per-thread oracle instances during parallel trace generation.
+    /// This replaces the shared `oracle_callback` to fix the parallel oracle consumption bug.
+    oracle_bytes: Mutex<Option<Arc<Vec<u8>>>>,
 }
 
 impl<F: PrimeField64> ZiskExecutor<F> {
@@ -215,6 +220,7 @@ impl<F: PrimeField64> ZiskExecutor<F> {
             asm_shmem_rh: Arc::new(Mutex::new(None)),
             shmem_input_writer: std::array::from_fn(|_| Arc::new(Mutex::new(None))),
             oracle_callback: Mutex::new(None),
+            oracle_bytes: Mutex::new(None),
         }
     }
 
@@ -230,6 +236,15 @@ impl<F: PrimeField64> ZiskExecutor<F> {
     pub fn set_oracle_callback(&self, callback: OracleCallback) {
         let mut guard = self.oracle_callback.lock().expect("oracle_callback lock poisoned");
         *guard = Some(callback);
+    }
+
+    /// Sets the raw oracle bytes for per-thread oracle instantiation during parallel execution.
+    ///
+    /// Each thread in `compute_minimal_traces_with_oracle` will create its own `Replay64Oracle`
+    /// from these bytes, ensuring independent position counters and correct parallel execution.
+    pub fn set_oracle_bytes(&self, bytes: Vec<u8>) {
+        let mut guard = self.oracle_bytes.lock().expect("oracle_bytes lock poisoned");
+        *guard = Some(Arc::new(bytes));
     }
 
     #[allow(clippy::type_complexity)]
@@ -250,12 +265,12 @@ impl<F: PrimeField64> ZiskExecutor<F> {
     /// # Returns
     /// A vector of `EmuTrace` instances representing minimal traces.
     fn execute_with_emulator(&self) -> MinimalTraces {
-        // Oracle replay requires single-threaded execution because the witness data is a
-        // sequential stream that can't be consumed by multiple threads in parallel.
-        let has_oracle = self.oracle_callback.lock().expect("oracle_callback lock").is_some();
+        // Oracle replay with per-thread oracles allows parallel execution.
+        // Each thread gets its own Replay64Oracle instance with independent position counter.
+        let has_oracle = self.oracle_bytes.lock().expect("oracle_bytes lock").is_some();
         let num_threads = if has_oracle {
-            tracing::info!("Using single-threaded execution for oracle replay");
-            1
+            tracing::info!("Using {}-threaded execution for oracle replay (per-thread oracles)", Self::NUM_THREADS);
+            Self::NUM_THREADS
         } else {
             Self::NUM_THREADS
         };
@@ -559,15 +574,19 @@ impl<F: PrimeField64> ZiskExecutor<F> {
             ..EmuOptions::default()
         };
 
-        // Get oracle callback if set
-        let oracle_callback = self.oracle_callback.lock().expect("oracle_callback lock").clone();
+        // Get oracle bytes for per-thread oracle instantiation
+        let oracle_bytes = self.oracle_bytes.lock().expect("oracle_bytes lock").clone();
+        eprintln!("[EXECUTOR] oracle_bytes is_some: {}", oracle_bytes.is_some());
+        if let Some(ref bytes) = oracle_bytes {
+            eprintln!("[EXECUTOR] oracle_bytes len: {}", bytes.len());
+        }
 
         let min_traces = ZiskEmulator::compute_minimal_traces_with_oracle(
             &self.zisk_rom,
             &input_data,
             &emu_options,
             num_threads,
-            oracle_callback,
+            oracle_bytes,
         )
         .expect("Error during emulator execution");
 

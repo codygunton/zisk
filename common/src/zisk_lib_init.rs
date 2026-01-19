@@ -39,6 +39,13 @@ pub trait ZiskWitnessLibrary<F: PrimeField64> {
     /// reads from or writes to the oracle CSR address. Use `zisk_oracle::ZiskOracle`
     /// with `ziskemu::create_oracle_callback` to create an appropriate callback.
     fn set_oracle_callback(&self, callback: OracleCallback);
+
+    /// Sets the raw oracle bytes for per-thread oracle instantiation during parallel execution.
+    ///
+    /// Each thread in `compute_minimal_traces_with_oracle` will create its own `Replay64Oracle`
+    /// from these bytes, ensuring independent position counters and correct parallel execution.
+    /// This is the preferred method for oracle replay as it enables parallel trace generation.
+    fn set_oracle_bytes(&self, bytes: Vec<u8>);
 }
 
 // SUpertrait for ZiskWitnessLibrary and WitnessLibrary

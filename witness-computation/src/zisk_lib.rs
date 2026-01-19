@@ -228,6 +228,12 @@ impl ZiskWitnessLibrary<Goldilocks> for WitnessLib<Goldilocks> {
             executor.set_oracle_callback(callback);
         }
     }
+
+    fn set_oracle_bytes(&self, bytes: Vec<u8>) {
+        if let Some(executor) = &self.executor {
+            executor.set_oracle_bytes(bytes);
+        }
+    }
 }
 
 impl ZiskLib<Goldilocks> for WitnessLib<Goldilocks> {}

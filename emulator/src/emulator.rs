@@ -15,22 +15,23 @@
 //!             Emu::run()
 //! ```
 
-use crate::{Emu, EmuOptions, ErrWrongArguments, ParEmuOptions, ZiskEmulatorErr};
+use crate::{
+    create_replay64_oracle_callback, Emu, EmuOptions, ErrWrongArguments, ParEmuOptions,
+    ZiskEmulatorErr,
+};
 
 use data_bus::DataBusTrait;
 use fields::PrimeField;
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Instant,
 };
 use sysinfo::System;
 use zisk_common::EmuTrace;
-// Q?: why the term "callback"? when is the oracle funtion executed?
-// A: "Callback" because the emulator "calls back" into user-provided code when hitting a CSR
-// read/write. It's executed synchronously during emulation whenever the guest accesses CSR 0x7c0.
-// A clearer name might be `OracleHandler` or just `Oracle`.
 use zisk_core::{OracleCallback, Riscv2zisk, ZiskRom};
+use zisk_oracle::processors::Replay64Oracle;
 
 pub trait Emulator {
     fn emulate(
@@ -227,16 +228,19 @@ impl ZiskEmulator {
         Self::compute_minimal_traces_with_oracle(rom, inputs, options, num_threads, None)
     }
 
-    /// EXECUTE phase with optional oracle callback.
+    /// EXECUTE phase with optional oracle bytes.
     ///
-    /// This variant allows passing an oracle callback that will be set on the
-    /// emulator's memory before execution. The oracle handles CSR 0x7c0 reads/writes.
+    /// This variant allows passing raw oracle bytes that will be used to create
+    /// per-thread oracle instances. Each thread gets its own `Replay64Oracle` with
+    /// an independent position counter, fixing the parallel oracle consumption bug.
+    ///
+    /// The oracle handles CSR 0x7c0 reads/writes for ZKsyncOS witness replay.
     pub fn compute_minimal_traces_with_oracle(
         rom: &ZiskRom,
         inputs: &[u8],
         options: &EmuOptions,
         num_threads: usize,
-        oracle_callback: Option<OracleCallback>,
+        oracle_bytes: Option<Arc<Vec<u8>>>,
     ) -> Result<Vec<EmuTrace>, ZiskEmulatorErr> {
         // DEBUG: Use run_with_oracle path (like benchmark) instead of par_run_with_oracle
         if std::env::var("ZISK_DEBUG_RUN_MODE").map(|v| v == "1").unwrap_or(false) {
@@ -245,6 +249,13 @@ impl ZiskEmulator {
             let mut debug_options = options.clone();
             debug_options.chunk_size = None;
             let mut emu = Emu::new(rom);
+
+            // Create oracle callback from bytes for single-threaded debug mode
+            let oracle_callback = oracle_bytes.as_ref().map(|bytes| {
+                let oracle = Replay64Oracle::from_bytes_be(bytes);
+                create_replay64_oracle_callback(oracle)
+            });
+
             emu.run_with_oracle(
                 inputs.to_owned(),
                 &debug_options,
@@ -260,28 +271,39 @@ impl ZiskEmulator {
             return Ok(vec![]);
         }
 
+        // Debug: log oracle status
+        if let Some(ref bytes) = oracle_bytes {
+            eprintln!("[ORACLE] compute_minimal_traces_with_oracle: received {} bytes, {} threads", bytes.len(), num_threads);
+        } else {
+            eprintln!("[ORACLE] compute_minimal_traces_with_oracle: no oracle bytes provided");
+        }
+
         let mut minimal_traces = vec![Vec::new(); num_threads];
 
         minimal_traces.par_iter_mut().enumerate().for_each(|(thread_id, emu_trace)| {
             let par_emu_options =
                 ParEmuOptions::new(num_threads, thread_id, options.chunk_size.unwrap() as usize);
 
-            // Run the emulation with oracle callback support
-            // The oracle callback must be passed to par_run_with_oracle() because par_run()
-            // calls create_emu_context() which resets the memory and would overwrite any
-            // callback set beforehand.
+            // Create a per-thread oracle from the shared bytes.
+            // Each thread gets its own Replay64Oracle instance with an independent
+            // position counter, fixing the bug where all threads shared a single
+            // oracle and consumed values N times faster than expected.
+            let per_thread_callback = oracle_bytes.as_ref().map(|bytes| {
+                eprintln!("[ORACLE] Thread {} creating its own Replay64Oracle from {} bytes", thread_id, bytes.len());
+                let oracle = Replay64Oracle::from_bytes_be(bytes);
+                create_replay64_oracle_callback(oracle)
+            });
+
             let mut emu = Emu::new(rom);
             let result = emu.par_run_with_oracle(
                 inputs.to_owned(),
                 options,
                 &par_emu_options,
-                oracle_callback.clone(),
+                per_thread_callback,
             );
 
             if !emu.terminated() {
                 panic!("Emulation did not complete");
-                // TODO!
-                // return Err(ZiskEmulatorErr::EmulationNoCompleted);
             }
 
             *emu_trace = result;
