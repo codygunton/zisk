@@ -3,16 +3,22 @@ ZKsyncOS (in zksync-os/) is a "guest program" for proving EVM execution using Ai
 We have achieved the primary goal of using ZisK to execute real Ethereum blocks in ZKsyncOS built for RV64IMAC with Keccak MPT support.
 
 The cycle benchmarking/testing scripts:
-- ./bench-zisk-cycles.sh
-- ./bench-airbender-cycles.sh
+- ./bench-zisk-cycles.sh - produces logs at /tmp/zisk-bench.log
+- ./bench-airbender-cycles.sh - produces logs at /tmp/airbender-bench.log
 
-
-To develop proving code, including GPU code, use:
- - ./prove-block-gpu.sh
-
-produce logs at /tmp/zisk-bench.log and /tmp/airbender-bench.log respectively.
+For GPU proving development:
+- ./prove-block-gpu.sh - produces logs at /tmp/prove-block.log
 
 You will NOT use needlessly long timeouts when running these. 90s is sufficient for each.
+
+## Development Workflow
+
+Use `prove-block-gpu.sh` for proving development. This script:
+1. Uses pre-built binaries from `./target/release/`
+2. Sources Intel OneAPI environment automatically
+3. Logs verbose output to /tmp/prove-block.log (terminal shows minimal output)
+
+Do NOT attempt to rebuild with `cargo build --features gpu` during development iterations - the build environment issues with Intel libraries are already handled by the script.
 
 ## Current State
 
