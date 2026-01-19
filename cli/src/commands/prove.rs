@@ -8,9 +8,7 @@ use zisk_build::ZISK_VERSION_MESSAGE;
 use zisk_common::io::ZiskStdin;
 #[cfg(feature = "stats")]
 use zisk_common::ExecutorStatsEvent;
-use zisk_oracle::processors::Replay64Oracle;
-use zisk_sdk::{OracleCallback, ProverClient, ZiskProveResult};
-use ziskemu::create_replay64_oracle_callback;
+use zisk_sdk::{ProverClient, ZiskProveResult};
 
 // Structure representing the 'prove' subcommand of cargo.
 #[derive(clap::Args)]
@@ -131,14 +129,14 @@ impl ZiskProve {
         }
 
         let stdin = self.create_stdin()?;
-        let oracle_callback = self.create_oracle_callback()?;
+        let oracle_bytes = self.load_oracle_bytes()?;
 
         let emulator = if cfg!(target_os = "macos") { true } else { self.emulator };
 
         let (result, world_rank) = if emulator {
-            self.run_emu(stdin, gpu_params, oracle_callback)?
+            self.run_emu(stdin, gpu_params, oracle_bytes)?
         } else {
-            self.run_asm(stdin, gpu_params, oracle_callback)?
+            self.run_asm(stdin, gpu_params, oracle_bytes)?
         };
 
         if world_rank == 0 {
@@ -174,7 +172,7 @@ impl ZiskProve {
         Ok(stdin)
     }
 
-    fn create_oracle_callback(&self) -> Result<Option<OracleCallback>> {
+    fn load_oracle_bytes(&self) -> Result<Option<Vec<u8>>> {
         if let Some(witness_path) = &self.witness_file {
             if !witness_path.exists() {
                 return Err(anyhow::anyhow!(
@@ -188,12 +186,10 @@ impl ZiskProve {
             let witness_bytes = hex::decode(witness_hex.trim())
                 .context("Failed to decode hex witness data")?;
 
-            let replay_oracle = Replay64Oracle::from_bytes_be(&witness_bytes);
-            let callback = create_replay64_oracle_callback(replay_oracle);
-
+            eprintln!("[CLI] Loaded witness file with {} bytes of oracle data", witness_bytes.len());
             tracing::info!("Loaded witness file with {} bytes of oracle data", witness_bytes.len());
 
-            Ok(Some(callback))
+            Ok(Some(witness_bytes))
         } else {
             Ok(None)
         }
@@ -203,7 +199,7 @@ impl ZiskProve {
         &mut self,
         stdin: ZiskStdin,
         gpu_params: ParamsGPU,
-        oracle_callback: Option<OracleCallback>,
+        oracle_bytes: Option<Vec<u8>>,
     ) -> Result<(ZiskProveResult, i32)> {
         let prover = ProverClient::builder()
             .emu()
@@ -223,8 +219,11 @@ impl ZiskProve {
             .print_command_info()
             .build()?;
 
-        if let Some(callback) = oracle_callback {
-            prover.set_oracle_callback(callback);
+        if let Some(bytes) = oracle_bytes {
+            eprintln!("[CLI] Setting oracle bytes on prover: {} bytes", bytes.len());
+            prover.set_oracle_bytes(bytes);
+        } else {
+            eprintln!("[CLI] No oracle bytes to set on prover");
         }
 
         let result = prover.prove(stdin)?;
@@ -237,7 +236,7 @@ impl ZiskProve {
         &mut self,
         stdin: ZiskStdin,
         gpu_params: ParamsGPU,
-        oracle_callback: Option<OracleCallback>,
+        oracle_bytes: Option<Vec<u8>>,
     ) -> Result<(ZiskProveResult, i32)> {
         let prover = ProverClient::builder()
             .asm()
@@ -260,8 +259,8 @@ impl ZiskProve {
             .print_command_info()
             .build()?;
 
-        if let Some(callback) = oracle_callback {
-            prover.set_oracle_callback(callback);
+        if let Some(bytes) = oracle_bytes {
+            prover.set_oracle_bytes(bytes);
         }
 
         let result = prover.prove(stdin)?;
