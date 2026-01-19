@@ -82,6 +82,10 @@ impl ProverEngine for EmuProver {
         self.core_prover.backend.set_oracle_callback(callback);
     }
 
+    fn set_oracle_bytes(&self, bytes: Vec<u8>) {
+        self.core_prover.backend.set_oracle_bytes(bytes);
+    }
+
     fn executed_steps(&self) -> u64 {
         self.core_prover
             .backend

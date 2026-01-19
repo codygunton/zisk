@@ -47,6 +47,8 @@ pub trait ProverEngine {
 
     fn set_oracle_callback(&self, callback: OracleCallback);
 
+    fn set_oracle_bytes(&self, bytes: Vec<u8>);
+
     fn executed_steps(&self) -> u64;
 
     fn execute(&self, stdin: ZiskStdin, output_path: Option<PathBuf>) -> Result<ZiskExecuteResult>;
@@ -109,6 +111,13 @@ impl<C: ZiskBackend> ZiskProver<C> {
     /// This is required for proving programs that use oracle callbacks (like ZKsyncOS).
     pub fn set_oracle_callback(&self, callback: OracleCallback) {
         self.prover.set_oracle_callback(callback);
+    }
+
+    /// Set the raw oracle bytes for per-thread oracle instantiation.
+    /// This is the preferred method for proving programs that use oracle callbacks,
+    /// as it enables parallel trace generation (each thread gets its own oracle).
+    pub fn set_oracle_bytes(&self, bytes: Vec<u8>) {
+        self.prover.set_oracle_bytes(bytes);
     }
 
     /// Get the world rank of the prover. The world rank is the rank of the prover in the global MPI context.

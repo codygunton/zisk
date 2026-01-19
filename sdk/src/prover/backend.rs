@@ -33,6 +33,10 @@ impl ProverBackend {
         self.witness_lib.set_oracle_callback(callback);
     }
 
+    pub(crate) fn set_oracle_bytes(&self, bytes: Vec<u8>) {
+        self.witness_lib.set_oracle_bytes(bytes);
+    }
+
     pub(crate) fn execute(
         &self,
         stdin: ZiskStdin,
