@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Prove ZKsyncOS Ethereum blocks with GPU
-# Usage: ./prove-block-gpu.sh [BLOCK_NUMBER]
+# Prove ZKsyncOS Ethereum blocks with ZisK GPU prover
+# Usage: ./prove-block-zisk.sh [BLOCK_NUMBER]
 #
 # Environment variables:
 #   VERBOSE=1    Show detailed logging - operation counts, trace fills (default)
@@ -50,7 +50,7 @@ ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 ELF_FILE="$ZKSYNCOS_DIR/zksync_os/zksync_os_zisk.elf"
 WITNESS_FILE="$ETH_RUNNER_DIR/${BLOCK_NUMBER}_witness"
-OUTPUT_DIR="tmp/zksync-os-prove"
+OUTPUT_DIR="tmp/zisk-prove"
 
 echo "=== ZisK GPU ZKsyncOS Proving Test ==="
 echo "Block: $BLOCK_NUMBER"
@@ -132,12 +132,12 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-LOG_FILE="/tmp/prove-block.log"
+LOG_FILE="/tmp/prove-block-zisk.log"
 
 if [[ -n "$VERBOSE_FLAGS" ]]; then
-    echo "Running GPU prover with $VERBOSE_FLAGS (output in $LOG_FILE)..."
+    echo "Running ZisK GPU prover with $VERBOSE_FLAGS (output in $LOG_FILE)..."
 else
-    echo "Running GPU prover in quiet mode (output in $LOG_FILE)..."
+    echo "Running ZisK GPU prover in quiet mode (output in $LOG_FILE)..."
 fi
 echo ""
 
