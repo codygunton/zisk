@@ -94,6 +94,10 @@ impl<'a> Emu<'a> {
         emu.ctx.inst_ctx.c = trace_start.c;
         emu.ctx.inst_ctx.regs = trace_start.regs;
 
+        // Enable U256 delegation for witness replay - this must match trace generation
+        // so that handle_u256_for_replay correctly consumes mem_reads entries
+        emu.ctx.inst_ctx.mem.enable_u256_delegation();
+
         emu
     }
 
