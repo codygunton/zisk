@@ -1350,6 +1350,7 @@ dependencies = [
  "precomp-big-int",
  "precomp-keccakf",
  "precomp-sha256f",
+ "precomp-u256-delegation",
  "proofman",
  "proofman-common",
  "proofman-util",
@@ -3002,6 +3003,28 @@ dependencies = [
  "sha2",
  "sm-mem",
  "tracing",
+ "zisk-common",
+ "zisk-core",
+ "zisk-pil",
+]
+
+[[package]]
+name = "precomp-u256-delegation"
+version = "0.14.0"
+dependencies = [
+ "circuit",
+ "fields",
+ "mem-common",
+ "pil-std-lib",
+ "precompiles-common",
+ "proofman",
+ "proofman-common",
+ "proofman-macros",
+ "proofman-util",
+ "rayon",
+ "sm-mem",
+ "tracing",
+ "witness",
  "zisk-common",
  "zisk-core",
  "zisk-pil",
@@ -5793,6 +5816,7 @@ dependencies = [
  "precomp-big-int",
  "precomp-keccakf",
  "precomp-sha256f",
+ "precomp-u256-delegation",
  "proofman",
  "proofman-common",
  "proofman-macros",

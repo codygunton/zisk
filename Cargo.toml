@@ -35,6 +35,7 @@ members = [
     "precompiles/keccakf",
     "precompiles/sha256f",
     "precompiles/big_int",
+    "precompiles/u256_delegation",
     "lib-c",
     "lib-float",
     "emulator-asm/asm-runner",
@@ -84,6 +85,7 @@ precompiles-helpers = { path = "precompiles/helpers" }
 precomp-keccakf = { path = "precompiles/keccakf" }
 precomp-sha256f = { path = "precompiles/sha256f" }
 precomp-big-int = { path = "precompiles/big_int" }
+precomp-u256-delegation = { path = "precompiles/u256_delegation" }
 riscv = { path = "riscv" }
 rom-setup = { path = "rom-setup" }
 server = { path = "server" }
