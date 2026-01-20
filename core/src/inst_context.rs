@@ -17,6 +17,21 @@ pub enum EmulationMode {
     ConsumeMemReads,
 }
 
+/// Pending U256 operation data for bus emission.
+/// This is populated during trace replay and consumed during operation bus emission.
+#[derive(Debug, Default, Clone)]
+pub struct PendingU256Op {
+    pub valid: bool,
+    pub step: u64,
+    pub addr_a: u64,
+    pub addr_b: u64,
+    pub control: u32,
+    pub a_limbs: [u32; 8],
+    pub b_limbs: [u32; 8],
+    pub result_limbs: [u32; 8],
+    pub overflow: bool,
+}
+
 /// Zisk precompiled instruction context.
 /// Stores the input data (of the size expected by the precompiled components) and the output data.
 /// If the precompiled component finds input_data not empty, it should use this data instead of
@@ -117,6 +132,9 @@ pub struct InstContext {
 
     /// Fcall data
     pub fcall: FcallInstContext,
+
+    /// Pending U256 operation for bus emission (set during replay)
+    pub pending_u256: PendingU256Op,
 }
 
 /// RisK instruction context implementation
@@ -138,6 +156,7 @@ impl InstContext {
             emulation_mode: EmulationMode::default(),
             precompiled: PrecompiledInstContext::default(),
             fcall: FcallInstContext::default(),
+            pending_u256: PendingU256Op::default(),
         }
     }
 

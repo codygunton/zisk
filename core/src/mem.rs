@@ -424,7 +424,16 @@ impl Mem {
     /// * `x11` - Pointer to operand B
     /// * `x12` - Control mask
     /// * `regs` - Register file (for writing overflow flag to x12)
-    pub fn handle_u256_delegation(&mut self, x10: u64, x11: u64, x12: u32, regs: &mut [u64; 32]) {
+    /// Handle U256 CSR 0x7ca delegation and return operation data for bus emission.
+    ///
+    /// Returns (a_limbs, b_limbs, result_limbs, overflow) for bus emission.
+    pub fn handle_u256_delegation(
+        &mut self,
+        x10: u64,
+        x11: u64,
+        x12: u32,
+        regs: &mut [u64; 32],
+    ) -> ([u32; 8], [u32; 8], [u32; 8], bool) {
         use crate::u256::{execute_u256_op, u256_from_limbs, u256_to_limbs};
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -491,6 +500,9 @@ impl Mem {
 
         // Write overflow flag to x12 register
         regs[12] = overflow as u64;
+
+        // Return operation data for bus emission
+        (a_limbs, b_limbs, result_limbs, overflow)
     }
 
     /// Print a summary of U256 delegation usage.

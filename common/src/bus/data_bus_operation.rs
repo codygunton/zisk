@@ -71,6 +71,9 @@ pub const OPERATION_BUS_BLS12_381_COMPLEX_MUL_DATA_SIZE: usize =
 pub const OPERATION_BUS_ADD_256_DATA_SIZE: usize =
     OPERATION_BUS_DATA_SIZE + 4 * PARAMS_SIZE + 2 * DATA_256_BITS_SIZE + SINGLE_RESULT_SIZE;
 
+// U256 delegation: 4 base + 2 addr + 4 a_limbs + 4 b_limbs + 4 result_limbs + 1 overflow = 19
+pub const OPERATION_BUS_U256_DATA_SIZE: usize = OPERATION_BUS_DATA_SIZE + 15;
+
 // 4 bus_data + 5 addr + 4 x 384 = 4 + 5 + 4 * 6 = 33
 pub const MAX_OPERATION_DATA_SIZE: usize = OPERATION_BUS_ARITH_384_MOD_DATA_SIZE;
 
@@ -85,6 +88,18 @@ pub const A: usize = 2;
 
 /// Index of the `b` value in the operation data payload.
 pub const B: usize = 3;
+
+// U256 delegation field indices (after base 4 fields)
+// Base: [0]=op, [1]=op_type, [2]=step, [3]=control
+// Extra: [4]=addr_a, [5]=addr_b, [6..10]=a_limbs, [10..14]=b_limbs, [14..18]=result_limbs, [18]=overflow
+pub const U256_STEP: usize = A; // reuse A slot for step
+pub const U256_CONTROL: usize = B; // reuse B slot for control
+pub const U256_ADDR_A: usize = OPERATION_BUS_DATA_SIZE;
+pub const U256_ADDR_B: usize = OPERATION_BUS_DATA_SIZE + 1;
+pub const U256_A_LIMBS_START: usize = OPERATION_BUS_DATA_SIZE + 2;
+pub const U256_B_LIMBS_START: usize = U256_A_LIMBS_START + 4;
+pub const U256_RESULT_LIMBS_START: usize = U256_B_LIMBS_START + 4;
+pub const U256_OVERFLOW: usize = U256_RESULT_LIMBS_START + 4;
 
 /// Type alias for operation data payload.
 pub type OperationData<D> = [D; OPERATION_BUS_DATA_SIZE];
@@ -108,6 +123,7 @@ pub type OperationBls12_381ComplexAddData<D> = [D; OPERATION_BUS_BLS12_381_COMPL
 pub type OperationBls12_381ComplexSubData<D> = [D; OPERATION_BUS_BLS12_381_COMPLEX_SUB_DATA_SIZE];
 pub type OperationBls12_381ComplexMulData<D> = [D; OPERATION_BUS_BLS12_381_COMPLEX_MUL_DATA_SIZE];
 pub type OperationAdd256Data<D> = [D; OPERATION_BUS_ADD_256_DATA_SIZE];
+pub type OperationU256Data<D> = [D; OPERATION_BUS_U256_DATA_SIZE];
 
 pub enum ExtOperationData<D> {
     OperationData(OperationData<D>),
@@ -129,10 +145,18 @@ pub enum ExtOperationData<D> {
     OperationBls12_381ComplexSubData(OperationBls12_381ComplexSubData<D>),
     OperationBls12_381ComplexMulData(OperationBls12_381ComplexMulData<D>),
     OperationAdd256Data(OperationAdd256Data<D>),
+    OperationU256Data(OperationU256Data<D>),
 }
 
 const KECCAK_OP: u8 = ZiskOp::Keccak.code();
 const SHA256_OP: u8 = ZiskOp::Sha256.code();
+// U256 delegation uses CSR 0x7ca, not a ZiskOp. Use 0xca as identifier.
+pub const U256_OP: u8 = 0xca;
+
+/// Number of u64 values used to encode a U256 operation in mem_reads.
+/// Layout: [step, addr_a, addr_b, control, a0..a3, b0..b3, r0..r3, overflow]
+/// where a[i], b[i], r[i] are pairs of u32 limbs packed into u64
+pub const U256_MEM_READS_SIZE: usize = 17;
 const ARITH256_OP: u8 = ZiskOp::Arith256.code();
 const ARITH256_MOD_OP: u8 = ZiskOp::Arith256Mod.code();
 const SECP256K1_ADD_OP: u8 = ZiskOp::Secp256k1Add.code();
@@ -249,6 +273,11 @@ impl<D: Copy + Into<u64>> TryFrom<&[D]> for ExtOperationData<D> {
                 let array: OperationAdd256Data<D> =
                     data.try_into().map_err(|_| "Invalid OperationAdd256Data size")?;
                 Ok(ExtOperationData::OperationAdd256Data(array))
+            }
+            U256_OP => {
+                let array: OperationU256Data<D> =
+                    data.try_into().map_err(|_| "Invalid OperationU256Data size")?;
+                Ok(ExtOperationData::OperationU256Data(array))
             }
             _ => {
                 let array: OperationData<D> =
@@ -632,6 +661,65 @@ impl OperationBusData<u64> {
         }
     }
 
+    /// Creates U256 delegation operation bus payload from raw data.
+    ///
+    /// # Arguments
+    /// * `step` - The step at which the U256 operation occurred
+    /// * `control` - The control mask (operation selector)
+    /// * `addr_a` - Address of operand A
+    /// * `addr_b` - Address of operand B
+    /// * `a_limbs` - 8 x u32 limbs of operand A
+    /// * `b_limbs` - 8 x u32 limbs of operand B
+    /// * `result_limbs` - 8 x u32 limbs of result
+    /// * `overflow` - Overflow/result flag
+    /// * `buffer` - Output buffer (must be at least OPERATION_BUS_U256_DATA_SIZE)
+    ///
+    /// # Returns
+    /// A slice of the buffer containing the U256 bus payload
+    #[inline(always)]
+    pub fn write_u256_payload<'a>(
+        step: u64,
+        control: u32,
+        addr_a: u64,
+        addr_b: u64,
+        a_limbs: &[u32; 8],
+        b_limbs: &[u32; 8],
+        result_limbs: &[u32; 8],
+        overflow: bool,
+        buffer: &'a mut [u64; MAX_OPERATION_DATA_SIZE],
+    ) -> &'a [u64] {
+        // U256Delegation = 11 in ZiskOperationType enum
+        const U256_DELEGATION_OP_TYPE_ID: u64 = 11;
+
+        // Pack u32 limbs into u64 (2 limbs per u64)
+        let pack_limbs = |limbs: &[u32; 8]| -> [u64; 4] {
+            [
+                (limbs[0] as u64) | ((limbs[1] as u64) << 32),
+                (limbs[2] as u64) | ((limbs[3] as u64) << 32),
+                (limbs[4] as u64) | ((limbs[5] as u64) << 32),
+                (limbs[6] as u64) | ((limbs[7] as u64) << 32),
+            ]
+        };
+
+        let a_packed = pack_limbs(a_limbs);
+        let b_packed = pack_limbs(b_limbs);
+        let result_packed = pack_limbs(result_limbs);
+
+        // Layout: [op, op_type, step, control, addr_a, addr_b, a0..a3, b0..b3, r0..r3, overflow]
+        buffer[OP] = U256_OP as u64;
+        buffer[OP_TYPE] = U256_DELEGATION_OP_TYPE_ID as u64;
+        buffer[U256_STEP] = step;
+        buffer[U256_CONTROL] = control as u64;
+        buffer[U256_ADDR_A] = addr_a;
+        buffer[U256_ADDR_B] = addr_b;
+        buffer[U256_A_LIMBS_START..U256_A_LIMBS_START + 4].copy_from_slice(&a_packed);
+        buffer[U256_B_LIMBS_START..U256_B_LIMBS_START + 4].copy_from_slice(&b_packed);
+        buffer[U256_RESULT_LIMBS_START..U256_RESULT_LIMBS_START + 4].copy_from_slice(&result_packed);
+        buffer[U256_OVERFLOW] = overflow as u64;
+
+        &buffer[..OPERATION_BUS_U256_DATA_SIZE]
+    }
+
     /// Retrieves the operation code from operation data.
     ///
     /// # Arguments
@@ -661,6 +749,7 @@ impl OperationBusData<u64> {
             ExtOperationData::OperationBls12_381ComplexSubData(d) => d[OP] as u8,
             ExtOperationData::OperationBls12_381ComplexMulData(d) => d[OP] as u8,
             ExtOperationData::OperationAdd256Data(d) => d[OP] as u8,
+            ExtOperationData::OperationU256Data(d) => d[OP] as u8,
         }
     }
 
@@ -693,6 +782,7 @@ impl OperationBusData<u64> {
             ExtOperationData::OperationBls12_381ComplexSubData(d) => d[OP_TYPE],
             ExtOperationData::OperationBls12_381ComplexMulData(d) => d[OP_TYPE],
             ExtOperationData::OperationAdd256Data(d) => d[OP_TYPE],
+            ExtOperationData::OperationU256Data(d) => d[OP_TYPE],
         }
     }
 
@@ -725,6 +815,7 @@ impl OperationBusData<u64> {
             ExtOperationData::OperationBls12_381ComplexSubData(d) => d[A],
             ExtOperationData::OperationBls12_381ComplexMulData(d) => d[A],
             ExtOperationData::OperationAdd256Data(d) => d[A],
+            ExtOperationData::OperationU256Data(d) => d[A],
         }
     }
 
@@ -757,6 +848,7 @@ impl OperationBusData<u64> {
             ExtOperationData::OperationBls12_381ComplexSubData(d) => d[B],
             ExtOperationData::OperationBls12_381ComplexMulData(d) => d[B],
             ExtOperationData::OperationAdd256Data(d) => d[B],
+            ExtOperationData::OperationU256Data(d) => d[B],
         }
     }
 }
