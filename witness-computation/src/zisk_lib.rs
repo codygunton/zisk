@@ -12,7 +12,8 @@ use precomp_arith_eq_384::ArithEq384Manager;
 use precomp_big_int::Add256Manager;
 use precomp_keccakf::KeccakfManager;
 use precomp_sha256f::Sha256fManager;
-use precomp_u256_delegation::U256DelegationManager;
+// BENCHMARK: disabled for non-delegation proving measurement
+// use precomp_u256_delegation::U256DelegationManager;
 use proofman::register_std;
 use proofman_common::{PackedInfo, ProofmanResult};
 use sm_arith::ArithSM;
@@ -30,7 +31,9 @@ use zisk_pil::{
     BINARY_AIR_IDS, BINARY_EXTENSION_AIR_IDS, INPUT_DATA_AIR_IDS, KECCAKF_AIR_IDS, MEM_AIR_IDS,
     MEM_ALIGN_AIR_IDS, MEM_ALIGN_BYTE_AIR_IDS, MEM_ALIGN_READ_BYTE_AIR_IDS,
     MEM_ALIGN_WRITE_BYTE_AIR_IDS, ROM_AIR_IDS, ROM_DATA_AIR_IDS, SHA_256_F_AIR_IDS,
-    U256_DELEGATION_AIR_IDS, ZISK_AIRGROUP_ID,
+    // BENCHMARK: disabled for non-delegation proving measurement
+    // U256_DELEGATION_AIR_IDS,
+    ZISK_AIRGROUP_ID,
 };
 
 pub struct WitnessLib<F: PrimeField64> {
@@ -114,7 +117,8 @@ impl<F: PrimeField64> WitnessLibrary<F> for WitnessLib<F> {
         let arith_eq_sm = ArithEqManager::new(std.clone());
         let arith_eq_384_sm = ArithEq384Manager::new(std.clone());
         let add256_sm = Add256Manager::new(std.clone());
-        let u256_delegation_sm = U256DelegationManager::new(std.clone());
+        // BENCHMARK: disabled for non-delegation proving measurement
+        // let u256_delegation_sm = U256DelegationManager::new(std.clone());
 
         let mem_instances = vec![
             (ZISK_AIRGROUP_ID, MEM_AIR_IDS[0]),
@@ -163,10 +167,11 @@ impl<F: PrimeField64> WitnessLibrary<F> for WitnessLib<F> {
                     vec![(ZISK_AIRGROUP_ID, ADD_256_AIR_IDS[0])],
                     StateMachines::Add256Manager(add256_sm.clone()),
                 ),
-                (
-                    vec![(ZISK_AIRGROUP_ID, U256_DELEGATION_AIR_IDS[0])],
-                    StateMachines::U256DelegationManager(u256_delegation_sm.clone()),
-                ),
+                // BENCHMARK: disabled for non-delegation proving measurement
+                // (
+                //     vec![(ZISK_AIRGROUP_ID, U256_DELEGATION_AIR_IDS[0])],
+                //     StateMachines::U256DelegationManager(u256_delegation_sm.clone()),
+                // ),
             ],
         );
 

@@ -12,7 +12,8 @@ use precomp_arith_eq_384::ArithEq384CounterInputGen;
 use precomp_big_int::Add256CounterInputGen;
 use precomp_keccakf::KeccakfCounterInputGen;
 use precomp_sha256f::Sha256fCounterInputGen;
-use precomp_u256_delegation::U256DelegationCounterInputGen;
+// BENCHMARK: disabled for non-delegation proving measurement
+// use precomp_u256_delegation::U256DelegationCounterInputGen;
 use sm_arith::ArithCounterInputGen;
 use sm_binary::BinaryCounter;
 use sm_main::MainCounter;
@@ -20,7 +21,9 @@ use zisk_common::{BusDevice, BusDeviceMetrics, BusId, PayloadType, MEM_BUS_ID, O
 use zisk_core::{
     ARITH_EQ_384_OP_TYPE_ID, ARITH_EQ_OP_TYPE_ID, ARITH_OP_TYPE_ID, BIG_INT_OP_TYPE_ID,
     BINARY_E_OP_TYPE_ID, BINARY_OP_TYPE_ID, KECCAK_OP_TYPE_ID, PUB_OUT_OP_TYPE_ID,
-    SHA256_OP_TYPE_ID, U256_DELEGATION_OP_TYPE_ID,
+    SHA256_OP_TYPE_ID,
+    // BENCHMARK: disabled for non-delegation proving measurement
+    // U256_DELEGATION_OP_TYPE_ID,
 };
 
 /// A bus system facilitating communication between multiple publishers and subscribers.
@@ -46,7 +49,8 @@ pub struct StaticDataBus<D> {
     pub arith_eq_counter: (usize, ArithEqCounterInputGen),
     pub arith_eq_384_counter: (usize, ArithEq384CounterInputGen),
     pub add_256_counter: (usize, Add256CounterInputGen),
-    pub u256_delegation_counter: (usize, U256DelegationCounterInputGen),
+    // BENCHMARK: disabled for non-delegation proving measurement
+    // pub u256_delegation_counter: (usize, U256DelegationCounterInputGen),
     pub rom_counter_id: Option<usize>,
     /// Queue of pending data transfers to be processed.
     pending_transfers: VecDeque<(BusId, Vec<D>)>,
@@ -65,7 +69,8 @@ impl StaticDataBus<PayloadType> {
         arith_eq_counter: (usize, ArithEqCounterInputGen),
         arith_eq_384_counter: (usize, ArithEq384CounterInputGen),
         add_256_counter: (usize, Add256CounterInputGen),
-        u256_delegation_counter: (usize, U256DelegationCounterInputGen),
+        // BENCHMARK: disabled for non-delegation proving measurement
+        // u256_delegation_counter: (usize, U256DelegationCounterInputGen),
         rom_counter_id: Option<usize>,
     ) -> Self {
         Self {
@@ -79,7 +84,8 @@ impl StaticDataBus<PayloadType> {
             arith_eq_counter,
             arith_eq_384_counter,
             add_256_counter,
-            u256_delegation_counter,
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // u256_delegation_counter,
             rom_counter_id,
             pending_transfers: VecDeque::new(),
         }
@@ -162,12 +168,13 @@ impl StaticDataBus<PayloadType> {
                     &mut self.pending_transfers,
                     None,
                 ),
-                U256_DELEGATION_OP_TYPE_ID => self.u256_delegation_counter.1.process_data(
-                    &bus_id,
-                    payload,
-                    &mut self.pending_transfers,
-                    None,
-                ),
+                // BENCHMARK: disabled for non-delegation proving measurement
+                // U256_DELEGATION_OP_TYPE_ID => self.u256_delegation_counter.1.process_data(
+                //     &bus_id,
+                //     payload,
+                //     &mut self.pending_transfers,
+                //     None,
+                // ),
                 _ => true,
             },
             _ => true,
@@ -199,7 +206,8 @@ impl DataBusTrait<PayloadType, Box<dyn BusDeviceMetrics>> for StaticDataBus<Payl
         self.arith_eq_counter.1.on_close();
         self.arith_eq_384_counter.1.on_close();
         self.add_256_counter.1.on_close();
-        self.u256_delegation_counter.1.on_close();
+        // BENCHMARK: disabled for non-delegation proving measurement
+        // self.u256_delegation_counter.1.on_close();
     }
 
     fn into_devices(
@@ -221,7 +229,8 @@ impl DataBusTrait<PayloadType, Box<dyn BusDeviceMetrics>> for StaticDataBus<Payl
             (Some(self.arith_eq_counter.0), Some(Box::new(self.arith_eq_counter.1))),
             (Some(self.arith_eq_384_counter.0), Some(Box::new(self.arith_eq_384_counter.1))),
             (Some(self.add_256_counter.0), Some(Box::new(self.add_256_counter.1))),
-            (Some(self.u256_delegation_counter.0), Some(Box::new(self.u256_delegation_counter.1))),
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // (Some(self.u256_delegation_counter.0), Some(Box::new(self.u256_delegation_counter.1))),
         ];
 
         if let Some(mem_counter) = self.mem_counter.1 {

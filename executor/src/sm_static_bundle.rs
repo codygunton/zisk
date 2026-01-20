@@ -10,7 +10,8 @@ use precomp_arith_eq_384::ArithEq384Manager;
 use precomp_big_int::{Add256Instance, Add256Manager};
 use precomp_keccakf::{KeccakfInstance, KeccakfManager};
 use precomp_sha256f::{Sha256fInstance, Sha256fManager};
-use precomp_u256_delegation::{U256DelegationCollector, U256DelegationInstance, U256DelegationManager};
+// BENCHMARK: disabled for non-delegation proving measurement
+// use precomp_u256_delegation::{U256DelegationCollector, U256DelegationInstance, U256DelegationManager};
 use proofman_common::ProofCtx;
 use sm_arith::{ArithFullInstance, ArithSM};
 use sm_binary::{BinaryAddInstance, BinaryBasicInstance, BinaryExtensionInstance, BinarySM};
@@ -26,7 +27,8 @@ use zisk_pil::{
     ARITH_AIR_IDS, ARITH_EQ_384_AIR_IDS, ARITH_EQ_AIR_IDS, BINARY_ADD_AIR_IDS, BINARY_AIR_IDS,
     BINARY_EXTENSION_AIR_IDS, INPUT_DATA_AIR_IDS, KECCAKF_AIR_IDS, MEM_AIR_IDS, MEM_ALIGN_AIR_IDS,
     MEM_ALIGN_BYTE_AIR_IDS, MEM_ALIGN_READ_BYTE_AIR_IDS, MEM_ALIGN_WRITE_BYTE_AIR_IDS, ROM_AIR_IDS,
-    ROM_DATA_AIR_IDS, SHA_256_F_AIR_IDS, U256_DELEGATION_AIR_IDS, ZISK_AIRGROUP_ID,
+    // BENCHMARK: U256_DELEGATION_AIR_IDS disabled
+    ROM_DATA_AIR_IDS, SHA_256_F_AIR_IDS, ZISK_AIRGROUP_ID,
 };
 
 use crate::StaticDataBus;
@@ -45,7 +47,8 @@ pub enum StateMachines<F: PrimeField64> {
     ArithEqManager(Arc<ArithEqManager<F>>),
     ArithEq384Manager(Arc<ArithEq384Manager<F>>),
     Add256Manager(Arc<Add256Manager<F>>),
-    U256DelegationManager(Arc<U256DelegationManager<F>>),
+    // BENCHMARK: disabled for non-delegation proving measurement
+    // U256DelegationManager(Arc<U256DelegationManager<F>>),
 }
 
 impl<F: PrimeField64> StateMachines<F> {
@@ -60,7 +63,8 @@ impl<F: PrimeField64> StateMachines<F> {
             StateMachines::ArithEqManager(_) => 6,
             StateMachines::ArithEq384Manager(_) => 7,
             StateMachines::Add256Manager(_) => 8,
-            StateMachines::U256DelegationManager(_) => 9,
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // StateMachines::U256DelegationManager(_) => 9,
         }
     }
 
@@ -81,7 +85,8 @@ impl<F: PrimeField64> StateMachines<F> {
             StateMachines::ArithEqManager(sm) => (**sm).build_planner(),
             StateMachines::ArithEq384Manager(sm) => (**sm).build_planner(),
             StateMachines::Add256Manager(sm) => (**sm).build_planner(),
-            StateMachines::U256DelegationManager(sm) => (**sm).build_planner(),
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // StateMachines::U256DelegationManager(sm) => (**sm).build_planner(),
         }
     }
 
@@ -98,7 +103,8 @@ impl<F: PrimeField64> StateMachines<F> {
             StateMachines::ArithEqManager(sm) => (**sm).configure_instances(pctx, plans),
             StateMachines::ArithEq384Manager(sm) => (**sm).configure_instances(pctx, plans),
             StateMachines::Add256Manager(sm) => (**sm).configure_instances(pctx, plans),
-            StateMachines::U256DelegationManager(sm) => (**sm).configure_instances(pctx, plans),
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // StateMachines::U256DelegationManager(sm) => (**sm).configure_instances(pctx, plans),
         }
     }
 
@@ -113,7 +119,8 @@ impl<F: PrimeField64> StateMachines<F> {
             StateMachines::ArithEqManager(sm) => (**sm).build_instance(ictx),
             StateMachines::ArithEq384Manager(sm) => (**sm).build_instance(ictx),
             StateMachines::Add256Manager(sm) => (**sm).build_instance(ictx),
-            StateMachines::U256DelegationManager(sm) => (**sm).build_instance(ictx),
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // StateMachines::U256DelegationManager(sm) => (**sm).build_instance(ictx),
         }
     }
 }
@@ -193,7 +200,8 @@ impl<F: PrimeField64> StaticSMBundle<F> {
         let mut arith_eq_counter = None;
         let mut arith_eq_384_counter = None;
         let mut add256_counter = None;
-        let mut u256_delegation_counter = None;
+        // BENCHMARK: disabled for non-delegation proving measurement
+        // let mut u256_delegation_counter = None;
 
         for (_, sm) in self.sm.values() {
             match sm {
@@ -226,10 +234,11 @@ impl<F: PrimeField64> StaticSMBundle<F> {
                 StateMachines::Add256Manager(add256_sm) => {
                     add256_counter = Some((sm.type_id(), add256_sm.build_add256_counter()));
                 }
-                StateMachines::U256DelegationManager(u256_sm) => {
-                    u256_delegation_counter =
-                        Some((sm.type_id(), u256_sm.build_u256_counter()));
-                }
+                // BENCHMARK: disabled for non-delegation proving measurement
+                // StateMachines::U256DelegationManager(u256_sm) => {
+                //     u256_delegation_counter =
+                //         Some((sm.type_id(), u256_sm.build_u256_counter()));
+                // }
                 StateMachines::RomSM(_) => {}
             }
         }
@@ -244,7 +253,8 @@ impl<F: PrimeField64> StaticSMBundle<F> {
             arith_eq_counter.expect("ArithEq counter not found"),
             arith_eq_384_counter.expect("ArithEq384 counter not found"),
             add256_counter.expect("Add256 counter not found"),
-            u256_delegation_counter.expect("U256Delegation counter not found"),
+            // BENCHMARK: disabled for non-delegation proving measurement
+            // u256_delegation_counter.expect("U256Delegation counter not found"),
             Some(0),
         )
     }
@@ -276,7 +286,8 @@ impl<F: PrimeField64> StaticSMBundle<F> {
                 let mut arith_eq_384_collectors = Vec::new();
                 let mut add256_collectors = Vec::new();
                 let mut rom_collectors = Vec::new();
-                let mut u256_delegation_collectors: Vec<(usize, U256DelegationCollector)> = Vec::new();
+                // BENCHMARK: disabled for non-delegation proving measurement
+                // let mut u256_delegation_collectors: Vec<(usize, U256DelegationCollector)> = Vec::new();
                 for global_idx in global_idxs {
                     let secn_instance = secn_instances.get(global_idx).unwrap();
 
@@ -420,19 +431,20 @@ impl<F: PrimeField64> StaticSMBundle<F> {
                                 rom_collectors.push((*global_idx, collector));
                             }
                         }
-                        air_id if air_id == U256_DELEGATION_AIR_IDS[0] => {
-                            let u256_instance = secn_instance
-                                .as_any()
-                                .downcast_ref::<U256DelegationInstance<F>>()
-                                .unwrap();
-                            if let Some(collector) = u256_instance.build_inputs_collector(ChunkId(chunk_id)) {
-                                let u256_collector = *collector
-                                    .as_any()
-                                    .downcast::<U256DelegationCollector>()
-                                    .expect("Expected U256DelegationCollector");
-                                u256_delegation_collectors.push((*global_idx, u256_collector));
-                            }
-                        }
+                        // BENCHMARK: disabled for non-delegation proving measurement
+                        // air_id if air_id == U256_DELEGATION_AIR_IDS[0] => {
+                        //     let u256_instance = secn_instance
+                        //         .as_any()
+                        //         .downcast_ref::<U256DelegationInstance<F>>()
+                        //         .unwrap();
+                        //     if let Some(collector) = u256_instance.build_inputs_collector(ChunkId(chunk_id)) {
+                        //         let u256_collector = *collector
+                        //             .as_any()
+                        //             .downcast::<U256DelegationCollector>()
+                        //             .expect("Expected U256DelegationCollector");
+                        //         u256_delegation_collectors.push((*global_idx, u256_collector));
+                        //     }
+                        // }
                         _ => {
                             panic!("Unsupported AIR ID: {}", air_id);
                         }
@@ -487,7 +499,8 @@ impl<F: PrimeField64> StaticSMBundle<F> {
                     arith_eq_384_collectors,
                     add256_collectors,
                     rom_collectors,
-                    u256_delegation_collectors,
+                    // BENCHMARK: disabled for non-delegation proving measurement
+                    // u256_delegation_collectors,
                     arith_eq_inputs_generator.expect("ArithEq input generator not found"),
                     arith_eq_384_inputs_generator.expect("ArithEq384 input generator not found"),
                     keccakf_inputs_generator.expect("KeccakF input generator not found"),
