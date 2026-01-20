@@ -41,6 +41,7 @@ impl EmuContext {
                 emulation_mode: EmulationMode::default(),
                 precompiled: PrecompiledInstContext::default(),
                 fcall: FcallInstContext::default(),
+                pending_u256: zisk_core::PendingU256Op::default(),
             },
             tracerv: Vec::new(),
             tracerv_step: 0,

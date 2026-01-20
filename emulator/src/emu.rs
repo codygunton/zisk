@@ -1081,7 +1081,8 @@ impl<'a> Emu<'a> {
 
     /// Handle U256 CSR 0x7ca delegation for trace generation.
     ///
-    /// Executes U256 delegation and records the overflow flag (regs[12]) to mem_reads.
+    /// Executes U256 delegation and records full operation data to mem_reads.
+    /// Layout: [step, addr_a, addr_b, control, a0..a3, b0..b3, r0..r3, overflow]
     /// This is used during GenerateMemReads mode.
     #[inline(always)]
     fn handle_u256_for_generation(&mut self, addr: u64, mem_reads: &mut Vec<u64>) {
@@ -1089,35 +1090,98 @@ impl<'a> Emu<'a> {
             let x10 = self.ctx.inst_ctx.regs[10];
             let x11 = self.ctx.inst_ctx.regs[11];
             let x12 = self.ctx.inst_ctx.regs[12] as u32;
-            self.ctx.inst_ctx.mem.handle_u256_delegation(
-                x10,
-                x11,
-                x12,
-                &mut self.ctx.inst_ctx.regs,
-            );
-            // Record the overflow flag (regs[12]) for replay
-            // During replay, we'll restore this value instead of re-executing U256
-            mem_reads.push(self.ctx.inst_ctx.regs[12]);
+            let step = self.ctx.inst_ctx.step;
+
+            let (a_limbs, b_limbs, result_limbs, overflow) =
+                self.ctx.inst_ctx.mem.handle_u256_delegation(
+                    x10,
+                    x11,
+                    x12,
+                    &mut self.ctx.inst_ctx.regs,
+                );
+
+            // Pack u32 limbs into u64 (2 limbs per u64)
+            let pack_limbs = |limbs: &[u32; 8]| -> [u64; 4] {
+                [
+                    (limbs[0] as u64) | ((limbs[1] as u64) << 32),
+                    (limbs[2] as u64) | ((limbs[3] as u64) << 32),
+                    (limbs[4] as u64) | ((limbs[5] as u64) << 32),
+                    (limbs[6] as u64) | ((limbs[7] as u64) << 32),
+                ]
+            };
+
+            // Record full operation data for replay
+            // Layout: [step, addr_a, addr_b, control, a0..a3, b0..b3, r0..r3, overflow]
+            mem_reads.push(step);
+            mem_reads.push(x10);
+            mem_reads.push(x11);
+            mem_reads.push(x12 as u64);
+            mem_reads.extend_from_slice(&pack_limbs(&a_limbs));
+            mem_reads.extend_from_slice(&pack_limbs(&b_limbs));
+            mem_reads.extend_from_slice(&pack_limbs(&result_limbs));
+            mem_reads.push(overflow as u64);
         }
     }
 
     /// Handle U256 CSR 0x7ca delegation for trace replay.
     ///
-    /// Instead of executing U256 delegation (which would read empty memory),
-    /// restores the overflow flag (regs[12]) from mem_reads.
+    /// Reads full operation data from mem_reads and stores in pending_u256 for bus emission.
+    /// Layout: [step, addr_a, addr_b, control, a0..a3, b0..b3, r0..r3, overflow]
     /// This is used during ConsumeMemReads mode.
     #[inline(always)]
     fn handle_u256_for_replay(&mut self, addr: u64, mem_reads: &[u64], mem_reads_index: &mut usize) {
+        use zisk_common::U256_MEM_READS_SIZE;
+
         if self.ctx.inst_ctx.mem.is_u256_csr_write(addr) {
-            // Restore the overflow flag from mem_reads
             debug_assert!(
-                *mem_reads_index < mem_reads.len(),
-                "U256 replay: mem_reads exhausted at index {} (len={})",
+                *mem_reads_index + U256_MEM_READS_SIZE <= mem_reads.len(),
+                "U256 replay: mem_reads exhausted at index {} (need {}, len={})",
                 *mem_reads_index,
+                U256_MEM_READS_SIZE,
                 mem_reads.len()
             );
-            self.ctx.inst_ctx.regs[12] = mem_reads[*mem_reads_index];
-            *mem_reads_index += 1;
+
+            // Unpack u64 into pairs of u32 limbs
+            let unpack_limbs = |packed: &[u64]| -> [u32; 8] {
+                [
+                    (packed[0] & 0xFFFF_FFFF) as u32,
+                    ((packed[0] >> 32) & 0xFFFF_FFFF) as u32,
+                    (packed[1] & 0xFFFF_FFFF) as u32,
+                    ((packed[1] >> 32) & 0xFFFF_FFFF) as u32,
+                    (packed[2] & 0xFFFF_FFFF) as u32,
+                    ((packed[2] >> 32) & 0xFFFF_FFFF) as u32,
+                    (packed[3] & 0xFFFF_FFFF) as u32,
+                    ((packed[3] >> 32) & 0xFFFF_FFFF) as u32,
+                ]
+            };
+
+            let base = *mem_reads_index;
+            let step = mem_reads[base];
+            let addr_a = mem_reads[base + 1];
+            let addr_b = mem_reads[base + 2];
+            let control = mem_reads[base + 3] as u32;
+            let a_limbs = unpack_limbs(&mem_reads[base + 4..base + 8]);
+            let b_limbs = unpack_limbs(&mem_reads[base + 8..base + 12]);
+            let result_limbs = unpack_limbs(&mem_reads[base + 12..base + 16]);
+            let overflow = mem_reads[base + 16] != 0;
+
+            *mem_reads_index += U256_MEM_READS_SIZE;
+
+            // Restore the overflow flag to x12
+            self.ctx.inst_ctx.regs[12] = overflow as u64;
+
+            // Store pending U256 operation for bus emission
+            self.ctx.inst_ctx.pending_u256 = zisk_core::PendingU256Op {
+                valid: true,
+                step,
+                addr_a,
+                addr_b,
+                control,
+                a_limbs,
+                b_limbs,
+                result_limbs,
+                overflow,
+            };
         }
     }
 
@@ -2264,6 +2328,24 @@ impl<'a> Emu<'a> {
             data_bus.write_to_bus(OPERATION_BUS_ID, operation_payload);
         }
 
+        // Emit pending U256 operation if any
+        if self.ctx.inst_ctx.pending_u256.valid {
+            let pending = &self.ctx.inst_ctx.pending_u256;
+            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
+                pending.step,
+                pending.control,
+                pending.addr_a,
+                pending.addr_b,
+                &pending.a_limbs,
+                &pending.b_limbs,
+                &pending.result_limbs,
+                pending.overflow,
+                &mut self.static_array,
+            );
+            data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
+            self.ctx.inst_ctx.pending_u256.valid = false;
+        }
+
         // #[cfg(feature = "sp")]
         // self.set_sp(instruction);
         self.set_pc(instruction);
@@ -2315,6 +2397,24 @@ impl<'a> Emu<'a> {
                 &mut self.static_array,
             );
             data_bus.write_to_bus(OPERATION_BUS_ID, operation_payload);
+        }
+
+        // Emit pending U256 operation if any
+        if self.ctx.inst_ctx.pending_u256.valid {
+            let pending = &self.ctx.inst_ctx.pending_u256;
+            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
+                pending.step,
+                pending.control,
+                pending.addr_a,
+                pending.addr_b,
+                &pending.a_limbs,
+                &pending.b_limbs,
+                &pending.result_limbs,
+                pending.overflow,
+                &mut self.static_array,
+            );
+            data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
+            self.ctx.inst_ctx.pending_u256.valid = false;
         }
 
         // #[cfg(feature = "sp")]
@@ -2434,6 +2534,24 @@ impl<'a> Emu<'a> {
                 &mut self.static_array,
             );
             _continue = data_bus.write_to_bus(OPERATION_BUS_ID, operation_payload);
+        }
+
+        // Emit pending U256 operation if any
+        if self.ctx.inst_ctx.pending_u256.valid {
+            let pending = &self.ctx.inst_ctx.pending_u256;
+            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
+                pending.step,
+                pending.control,
+                pending.addr_a,
+                pending.addr_b,
+                &pending.a_limbs,
+                &pending.b_limbs,
+                &pending.result_limbs,
+                pending.overflow,
+                &mut self.static_array,
+            );
+            _continue = _continue && data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
+            self.ctx.inst_ctx.pending_u256.valid = false;
         }
 
         // Get rom bus data
