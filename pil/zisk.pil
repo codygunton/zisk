@@ -18,8 +18,7 @@ require "arith_eq/pil/arith_eq.pil";
 require "arith_eq_384/pil/arith_eq_384.pil";
 require "keccakf/pil/keccakf.pil";
 require "sha256f/pil/sha256f.pil";
-// BENCHMARK: disabled for non-delegation proving measurement
-// require "u256_delegation/pil/u256_delegation.pil";
+require "u256_delegation/pil/u256_delegation.pil";
 
 proofval enable_input_data;
 enable_input_data * (1 - enable_input_data);
@@ -88,8 +87,7 @@ airgroup Zisk {
     Sha256f(N: 2**18);
 
     // U256 Delegation (CSR 0x7ca from ZKsyncOS)
-    // BENCHMARK: disabled for non-delegation proving measurement
-    // U256Delegation(N: 2**20);
+    U256Delegation(N: 2**20);
 
     // Public Inputs
     for (int i = 0; i < PUBLIC_INPUTS_64_BITS; i++) {

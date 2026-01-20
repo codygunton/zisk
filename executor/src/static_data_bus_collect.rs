@@ -15,8 +15,7 @@ use precomp_keccakf::KeccakfCollector;
 use precomp_keccakf::KeccakfCounterInputGen;
 use precomp_sha256f::Sha256fCollector;
 use precomp_sha256f::Sha256fCounterInputGen;
-// BENCHMARK: disabled for non-delegation proving measurement
-// use precomp_u256_delegation::U256DelegationCollector;
+use precomp_u256_delegation::U256DelegationCollector;
 use sm_arith::ArithCounterInputGen;
 use sm_arith::ArithInstanceCollector;
 use sm_binary::{BinaryAddCollector, BinaryBasicCollector, BinaryExtensionCollector};
@@ -72,9 +71,8 @@ pub struct StaticDataBusCollect<D> {
     /// ROM collector
     pub rom_collector: Vec<(usize, RomCollector)>,
 
-    // BENCHMARK: disabled for non-delegation proving measurement
-    // /// U256 delegation collectors
-    // pub u256_delegation_collector: Vec<(usize, U256DelegationCollector)>,
+    /// U256 delegation collectors
+    pub u256_delegation_collector: Vec<(usize, U256DelegationCollector)>,
 
     /// Queue of pending data transfers to be processed.
     pending_transfers: VecDeque<(BusId, Vec<D>)>,
@@ -90,8 +88,7 @@ const SHA256_TYPE: u64 = ZiskOperationType::Sha256 as u64;
 const ARITH_EQ_TYPE: u64 = ZiskOperationType::ArithEq as u64;
 const ARITH_EQ_384_TYPE: u64 = ZiskOperationType::ArithEq384 as u64;
 const BIG_INT_OP_TYPE_ID: u64 = ZiskOperationType::BigInt as u64;
-// BENCHMARK: disabled for non-delegation proving measurement
-// const U256_DELEGATION_TYPE: u64 = ZiskOperationType::U256Delegation as u64;
+const U256_DELEGATION_TYPE: u64 = ZiskOperationType::U256Delegation as u64;
 
 impl StaticDataBusCollect<PayloadType> {
     /// Creates a new `DataBus` instance.
@@ -109,8 +106,7 @@ impl StaticDataBusCollect<PayloadType> {
         arith_eq_384_collector: Vec<(usize, ArithEq384Collector)>,
         add256_collector: Vec<(usize, Add256Collector)>,
         rom_collector: Vec<(usize, RomCollector)>,
-        // BENCHMARK: disabled for non-delegation proving measurement
-        // u256_delegation_collector: Vec<(usize, U256DelegationCollector)>,
+        u256_delegation_collector: Vec<(usize, U256DelegationCollector)>,
         arith_eq_inputs_generator: ArithEqCounterInputGen,
         arith_eq_384_inputs_generator: ArithEq384CounterInputGen,
         keccakf_inputs_generator: KeccakfCounterInputGen,
@@ -134,8 +130,7 @@ impl StaticDataBusCollect<PayloadType> {
             arith_eq_384_collector,
             add256_collector,
             rom_collector,
-            // BENCHMARK: disabled for non-delegation proving measurement
-            // u256_delegation_collector,
+            u256_delegation_collector,
             arith_eq_inputs_generator,
             arith_eq_384_inputs_generator,
             keccakf_inputs_generator,
@@ -308,17 +303,16 @@ impl StaticDataBusCollect<PayloadType> {
                         Some(&self.mem_collectors_info),
                     );
                 }
-                // BENCHMARK: disabled for non-delegation proving measurement
-                // U256_DELEGATION_TYPE => {
-                //     for (_, u256_delegation_collector) in &mut self.u256_delegation_collector {
-                //         u256_delegation_collector.process_data(
-                //             &bus_id,
-                //             payload,
-                //             &mut self.pending_transfers,
-                //             None,
-                //         );
-                //     }
-                // }
+                U256_DELEGATION_TYPE => {
+                    for (_, u256_delegation_collector) in &mut self.u256_delegation_collector {
+                        u256_delegation_collector.process_data(
+                            &bus_id,
+                            payload,
+                            &mut self.pending_transfers,
+                            None,
+                        );
+                    }
+                }
                 _ => {}
             },
             ROM_BUS_ID => {
@@ -407,10 +401,9 @@ impl DataBusTrait<PayloadType, Box<dyn BusDevice<PayloadType>>>
             result.push((Some(id), Some(Box::new(collector) as Box<dyn BusDevice<PayloadType>>)));
         }
 
-        // BENCHMARK: disabled for non-delegation proving measurement
-        // for (id, collector) in self.u256_delegation_collector {
-        //     result.push((Some(id), Some(Box::new(collector) as Box<dyn BusDevice<PayloadType>>)));
-        // }
+        for (id, collector) in self.u256_delegation_collector {
+            result.push((Some(id), Some(Box::new(collector) as Box<dyn BusDevice<PayloadType>>)));
+        }
 
         result
     }
