@@ -40,18 +40,25 @@ impl Planner for U256DelegationPlanner {
         }
 
         // Process counters from each chunk
+        let mut total_ops: u64 = 0;
         counters.iter().for_each(|(chunk_id, counter)| {
             let u256_counter =
                 Metrics::as_any(&**counter).downcast_ref::<U256DelegationCounterInputGen>().unwrap();
 
             for (index, instance_info) in self.instances_info.iter().enumerate() {
-                let inst_count = InstCount::new(
-                    *chunk_id,
-                    u256_counter.inst_count(instance_info.op_type).unwrap_or(0),
-                );
+                let chunk_count = u256_counter.inst_count(instance_info.op_type).unwrap_or(0);
+                total_ops += chunk_count;
+                let inst_count = InstCount::new(*chunk_id, chunk_count);
                 count[index].push(inst_count);
             }
         });
+
+        if total_ops > 0 {
+            tracing::info!(
+                "U256DelegationPlanner: Planning {} U256 delegation operations across {} chunks",
+                total_ops, counters.len()
+            );
+        }
 
         // Generate plans for each instance type
         let mut plan_result = Vec::new();

@@ -16,7 +16,7 @@ use zisk_common::{
 };
 use zisk_core::ZiskOperationType;
 
-use crate::{U256DelegationInput, U256DelegationSM};
+use crate::{U256DelegationInput, U256DelegationSM, U256Operation};
 
 /// Instance for U256 delegation witness computation.
 pub struct U256DelegationInstance<F: PrimeField64> {
@@ -63,7 +63,7 @@ impl<F: PrimeField64> Instance<F> for U256DelegationInstance<F> {
             })
             .collect();
 
-        // Count total operations
+        // Count total operations and breakdown by type
         let total_ops: usize = inputs.iter().map(|v| v.len()).sum();
 
         if total_ops == 0 {
@@ -71,7 +71,35 @@ impl<F: PrimeField64> Instance<F> for U256DelegationInstance<F> {
             return Ok(None);
         }
 
-        tracing::info!("U256DelegationInstance: Computing witness for {} operations", total_ops);
+        // Count operations by type for detailed logging
+        let mut add_count = 0usize;
+        let mut sub_count = 0usize;
+        let mut sub_neg_count = 0usize;
+        let mut mul_low_count = 0usize;
+        let mut mul_high_count = 0usize;
+        let mut eq_count = 0usize;
+        let mut memcpy_count = 0usize;
+
+        for chunk in inputs.iter() {
+            for input in chunk.iter() {
+                match input.operation() {
+                    U256Operation::Add => add_count += 1,
+                    U256Operation::Sub => sub_count += 1,
+                    U256Operation::SubNegate => sub_neg_count += 1,
+                    U256Operation::MulLow => mul_low_count += 1,
+                    U256Operation::MulHigh => mul_high_count += 1,
+                    U256Operation::Eq => eq_count += 1,
+                    U256Operation::MemCpy => memcpy_count += 1,
+                }
+            }
+        }
+
+        tracing::info!(
+            "U256DelegationInstance: Computing witness for {} operations \
+            (ADD={}, SUB={}, SUB_NEG={}, MUL_LOW={}, MUL_HIGH={}, EQ={}, MEMCPY={})",
+            total_ops, add_count, sub_count, sub_neg_count,
+            mul_low_count, mul_high_count, eq_count, memcpy_count
+        );
 
         // Compute witness using state machine
         let witness = self.u256_sm.compute_witness(&inputs, trace_buffer)?;
@@ -145,6 +173,16 @@ impl BusDevice<PayloadType> for U256DelegationCollector {
 
         // Extract U256DelegationInput from bus data
         let input = U256DelegationInput::from_bus_data(data);
+
+        // Log first operation collected for debugging
+        if self.inputs.is_empty() {
+            tracing::debug!(
+                "U256DelegationCollector: First operation collected - {:?} at step {}",
+                input.operation(),
+                input.step_main
+            );
+        }
+
         self.inputs.push(input);
 
         self.inputs.len() < self.num_operations as usize
