@@ -271,13 +271,6 @@ impl ZiskEmulator {
             return Ok(vec![]);
         }
 
-        // Debug: log oracle status
-        if let Some(ref bytes) = oracle_bytes {
-            eprintln!("[ORACLE] compute_minimal_traces_with_oracle: received {} bytes, {} threads", bytes.len(), num_threads);
-        } else {
-            eprintln!("[ORACLE] compute_minimal_traces_with_oracle: no oracle bytes provided");
-        }
-
         let mut minimal_traces = vec![Vec::new(); num_threads];
 
         minimal_traces.par_iter_mut().enumerate().for_each(|(thread_id, emu_trace)| {
@@ -289,7 +282,6 @@ impl ZiskEmulator {
             // position counter, fixing the bug where all threads shared a single
             // oracle and consumed values N times faster than expected.
             let per_thread_callback = oracle_bytes.as_ref().map(|bytes| {
-                eprintln!("[ORACLE] Thread {} creating its own Replay64Oracle from {} bytes", thread_id, bytes.len());
                 let oracle = Replay64Oracle::from_bytes_be(bytes);
                 create_replay64_oracle_callback(oracle)
             });
@@ -316,58 +308,6 @@ impl ZiskEmulator {
             let y = i / num_threads;
 
             vec_traces.push(std::mem::take(&mut minimal_traces[x][y]));
-        }
-
-        // Debug: Log first and last few traces to verify integrity (including registers)
-        eprintln!("[TRACE-DEBUG] Collected {} traces", vec_traces.len());
-
-        // Also check for suspicious register values
-        let mut suspicious_count = 0;
-        for (i, trace) in vec_traces.iter().enumerate() {
-            // Check if regs[1] looks like garbage (not a valid ROM address or small value)
-            let r1 = trace.start_state.regs[1];
-            let is_suspicious = r1 > 0x90000000 && r1 != 0xffffffff80000000; // High values that aren't valid
-            if i < 5 || is_suspicious {
-                eprintln!(
-                    "[TRACE-DEBUG] trace[{}]: pc=0x{:x}, step={}, steps={}, mem_reads={}, sp=0x{:x}, regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]{}",
-                    i,
-                    trace.start_state.pc,
-                    trace.start_state.step,
-                    trace.steps,
-                    trace.mem_reads.len(),
-                    trace.start_state.sp,
-                    trace.start_state.regs[0],
-                    trace.start_state.regs[1],
-                    trace.start_state.regs[2],
-                    trace.start_state.regs[3],
-                    if is_suspicious { " [SUSPICIOUS regs[1]]" } else { "" }
-                );
-                if is_suspicious {
-                    suspicious_count += 1;
-                    if suspicious_count >= 20 {
-                        eprintln!("[TRACE-DEBUG] ... (stopping after 20 suspicious traces)");
-                        break;
-                    }
-                }
-            }
-        }
-        if vec_traces.len() > 10 {
-            eprintln!("[TRACE-DEBUG] ...");
-            for (i, trace) in vec_traces.iter().enumerate().skip(vec_traces.len() - 5) {
-                eprintln!(
-                    "[TRACE-DEBUG] trace[{}]: pc=0x{:x}, step={}, steps={}, mem_reads={}, sp=0x{:x}, regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]",
-                    i,
-                    trace.start_state.pc,
-                    trace.start_state.step,
-                    trace.steps,
-                    trace.mem_reads.len(),
-                    trace.start_state.sp,
-                    trace.start_state.regs[0],
-                    trace.start_state.regs[1],
-                    trace.start_state.regs[2],
-                    trace.start_state.regs[3]
-                );
-            }
         }
 
         Ok(vec_traces)

@@ -1534,13 +1534,13 @@ impl<'a> Emu<'a> {
     /// Set PC, based on current PC, current flag and current instruction
     #[inline(always)]
     pub fn set_pc(&mut self, instruction: &ZiskInst) {
-        if instruction.set_pc {
-            self.ctx.inst_ctx.pc = (self.ctx.inst_ctx.c as i64 + instruction.jmp_offset1) as u64;
+        self.ctx.inst_ctx.pc = if instruction.set_pc {
+            (self.ctx.inst_ctx.c as i64 + instruction.jmp_offset1) as u64
         } else if self.ctx.inst_ctx.flag {
-            self.ctx.inst_ctx.pc = (self.ctx.inst_ctx.pc as i64 + instruction.jmp_offset1) as u64;
+            (self.ctx.inst_ctx.pc as i64 + instruction.jmp_offset1) as u64
         } else {
-            self.ctx.inst_ctx.pc = (self.ctx.inst_ctx.pc as i64 + instruction.jmp_offset2) as u64;
-        }
+            (self.ctx.inst_ctx.pc as i64 + instruction.jmp_offset2) as u64
+        };
     }
 
     /// Run the whole program, fast
@@ -2230,9 +2230,6 @@ impl<'a> Emu<'a> {
         mem_reads_index: &mut usize,
         data_bus: &mut DB,
     ) -> bool {
-        // Track mem_reads consumption for debugging
-        let start_index = *mem_reads_index;
-
         let instruction = self.rom.get_instruction(self.ctx.inst_ctx.pc);
 
         self.source_a_mem_reads_consume_databus(instruction, mem_reads, mem_reads_index, data_bus);
@@ -2269,39 +2266,7 @@ impl<'a> Emu<'a> {
 
         // #[cfg(feature = "sp")]
         // self.set_sp(instruction);
-        let prev_pc = self.ctx.inst_ctx.pc;
         self.set_pc(instruction);
-
-        // Debug: Check for invalid PC after set_pc
-        if self.ctx.inst_ctx.pc > 0x90000000 {
-            let consumed = *mem_reads_index - start_index;
-            panic!(
-                "[STEP-DEBUG] PC became invalid after set_pc:\n  prev_pc=0x{:x}, new_pc=0x{:x}\n  step={}, c=0x{:x}, a=0x{:x}, b=0x{:x}\n  flag={}, set_pc={}, jmp_offset1={}, jmp_offset2={}\n  source_a={}, source_b={}, store={}\n  a_offset_imm0={}, b_offset_imm0={}\n  mem_reads_consumed={}, mem_reads_index={}, mem_reads_len={}\n  regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]",
-                prev_pc,
-                self.ctx.inst_ctx.pc,
-                self.ctx.inst_ctx.step,
-                self.ctx.inst_ctx.c,
-                self.ctx.inst_ctx.a,
-                self.ctx.inst_ctx.b,
-                self.ctx.inst_ctx.flag,
-                instruction.set_pc,
-                instruction.jmp_offset1,
-                instruction.jmp_offset2,
-                instruction.a_src,
-                instruction.b_src,
-                instruction.store,
-                instruction.a_offset_imm0,
-                instruction.b_offset_imm0,
-                consumed,
-                *mem_reads_index,
-                mem_reads.len(),
-                self.ctx.inst_ctx.regs[0],
-                self.ctx.inst_ctx.regs[1],
-                self.ctx.inst_ctx.regs[2],
-                self.ctx.inst_ctx.regs[3],
-            );
-        }
-
         self.ctx.inst_ctx.end = instruction.end;
 
         self.ctx.inst_ctx.step += 1;
@@ -2370,35 +2335,6 @@ impl<'a> Emu<'a> {
         data_bus: &mut DB,
         with_mem_ops: bool,
     ) {
-        // Debug: Log trace start state
-        let step = emu_trace.start_state.step;
-        let pc = emu_trace.start_state.pc;
-
-        // Sanity check: PC should be in valid ROM range (ROM is typically < 0x90000000)
-        if pc > 0x90000000 || pc == 0 {
-            panic!(
-                "[COUNT-DEBUG] Invalid initial PC 0x{:x} in trace (step={}, steps={}, mem_reads={})",
-                pc,
-                step,
-                emu_trace.steps,
-                emu_trace.mem_reads.len()
-            );
-        }
-
-        // Log all traces being processed for debugging (including first 4 registers)
-        eprintln!(
-            "[COUNT-DEBUG] process_emu_trace: step={}, pc=0x{:x}, steps={}, mem_reads={}, sp=0x{:x}, regs[0..4]=[0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}]",
-            step,
-            pc,
-            emu_trace.steps,
-            emu_trace.mem_reads.len(),
-            emu_trace.start_state.sp,
-            emu_trace.start_state.regs[0],
-            emu_trace.start_state.regs[1],
-            emu_trace.start_state.regs[2],
-            emu_trace.start_state.regs[3]
-        );
-
         // Set initial state
         self.ctx.inst_ctx.pc = emu_trace.start_state.pc;
         self.ctx.inst_ctx.sp = emu_trace.start_state.sp;
@@ -2431,29 +2367,8 @@ impl<'a> Emu<'a> {
         chunk_id: usize,
         data_bus: &mut DB,
     ) {
-        // Debug: Check bounds
-        if chunk_id >= vec_traces.len() {
-            panic!(
-                "[EXPAND-DEBUG] chunk_id {} out of bounds (vec_traces.len()={})",
-                chunk_id,
-                vec_traces.len()
-            );
-        }
-
         // Set initial state
         let emu_trace_start = &vec_traces[chunk_id].start_state;
-
-        // Debug: Log first step of trace
-        if chunk_id < 5 || chunk_id % 1000 == 0 {
-            eprintln!(
-                "[EXPAND-DEBUG] chunk_id={}: pc=0x{:x}, step={}, steps={}, mem_reads={}",
-                chunk_id,
-                emu_trace_start.pc,
-                emu_trace_start.step,
-                vec_traces[chunk_id].steps,
-                vec_traces[chunk_id].mem_reads.len()
-            );
-        }
         self.ctx.inst_ctx.pc = emu_trace_start.pc;
         self.ctx.inst_ctx.sp = emu_trace_start.sp;
         self.ctx.inst_ctx.step = emu_trace_start.step;
@@ -2546,9 +2461,6 @@ impl<'a> Emu<'a> {
         reg_trace: &mut EmuRegTrace,
         step_range_check: Option<&mut [u32]>,
     ) -> EmuFullTraceStep<F> {
-        if self.ctx.inst_ctx.pc == 0 {
-            println!("PC=0 CRASH (step:{})", self.ctx.inst_ctx.step);
-        }
         let instruction = self.rom.get_instruction(self.ctx.inst_ctx.pc);
 
         reg_trace.clear_reg_step_ranges();
