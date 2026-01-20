@@ -131,8 +131,42 @@ airtemplate U256Delegation(const int N = 2**20, const int operation_bus_id = OPE
     for (int i = 0; i < N_LIMBS; i++) {
         sel * is_eq * (result[i] - a[i]) === 0;
     }
-    // Equality check: if any limb differs, overflow must be 0
-    // This is complex to express directly; we use auxiliary columns in actual impl
+
+    // Auxiliary columns for equality check using inverse trick:
+    // eq_diff_nz[i] = 1 if a[i] != b[i], 0 otherwise
+    // eq_diff_inv[i] = inverse of (a[i] - b[i]) when non-zero (arbitrary when zero)
+    col witness bits(1) eq_diff_nz[N_LIMBS];
+    col witness eq_diff_inv[N_LIMBS];
+
+    // For each limb, verify eq_diff_nz correctly indicates if a[i] != b[i]
+    for (int i = 0; i < N_LIMBS; i++) {
+        // Boolean constraint for eq_diff_nz
+        eq_diff_nz[i] * (1 - eq_diff_nz[i]) === 0;
+
+        // If a[i] != b[i], then eq_diff_inv[i] is the inverse and eq_diff_nz[i] = 1
+        // Constraint: (a[i] - b[i]) * eq_diff_inv[i] = eq_diff_nz[i]
+        sel * is_eq * ((a[i] - b[i]) * eq_diff_inv[i] - eq_diff_nz[i]) === 0;
+
+        // If eq_diff_nz[i] = 0, then a[i] - b[i] must be 0
+        // Constraint: (1 - eq_diff_nz[i]) * (a[i] - b[i]) = 0
+        sel * is_eq * (1 - eq_diff_nz[i]) * (a[i] - b[i]) === 0;
+    }
+
+    // Sum of all non-zero indicators: if any limb differs, eq_any_diff > 0
+    const expr eq_any_diff = eq_diff_nz[0] + eq_diff_nz[1] + eq_diff_nz[2] + eq_diff_nz[3]
+                           + eq_diff_nz[4] + eq_diff_nz[5] + eq_diff_nz[6] + eq_diff_nz[7];
+
+    // Inverse for checking if eq_any_diff is zero
+    col witness eq_any_diff_inv;
+
+    // overflow = 1 iff eq_any_diff = 0 (i.e., all limbs match)
+    // Constraint 1: eq_any_diff * eq_any_diff_inv = 1 - overflow
+    // (if eq_any_diff != 0, then overflow must be 0)
+    sel * is_eq * (eq_any_diff * eq_any_diff_inv - (1 - overflow)) === 0;
+
+    // Constraint 2: overflow * eq_any_diff = 0
+    // (if overflow = 1, then eq_any_diff must be 0)
+    sel * is_eq * overflow * eq_any_diff === 0;
 
     // === MEMCPY CONSTRAINTS ===
     // For MEMCPY: result = b (or b+1 if carry_in)
@@ -234,18 +268,53 @@ airtemplate U256Delegation(const int N = 2**20, const int operation_bus_id = OPE
 
         // For MUL_HIGH: result[k] = high_product[k]
         sel * is_mul_high * (mul_pp_hi[k] + mul_carry_hi[k] - result[k] - mul_carry_hi[k+1] * 2**32) === 0;
-        sel * is_mul_high * (mul_pp_hi[k] - pp_sum_hi) === 0;
+
+        // Verify mul_pp_hi[k] equals the partial product sum (for both MUL_LOW and MUL_HIGH)
+        sel * is_mul * (mul_pp_hi[k] - pp_sum_hi) === 0;
     }
 
-    // MUL_LOW overflow: set if any high bits are non-zero
-    // We check if the final carry from position 7 plus any high partial products is non-zero
-    // This is approximated by checking if mul_carry_lo[N_LIMBS] > 0 or any high PP is non-zero
-    // For simplicity, we trust the emulator's overflow value and verify consistency:
-    // overflow should be 1 iff there exists non-zero high bits
-    // Auxiliary column to witness the "has high bits" condition
-    col witness bits(1) mul_has_high_bits;
-    sel * is_mul_low * mul_has_high_bits * (1 - mul_has_high_bits) === 0;  // Boolean
-    sel * is_mul_low * (overflow - mul_has_high_bits) === 0;
+    // === MUL_LOW OVERFLOW CONSTRAINTS ===
+    // For MUL_LOW, overflow = 1 iff any of the high 256 bits are non-zero.
+    // The high bits are computed from mul_pp_hi and mul_carry_hi.
+    //
+    // We compute the actual high limbs and use inverse trick to verify overflow.
+
+    // Auxiliary columns to compute and verify high limbs for MUL_LOW
+    col witness bits(32) mul_high_result[N_LIMBS];  // The computed high 256-bit result limbs
+    col witness bits(1) mul_hi_nz[N_LIMBS];         // mul_hi_nz[k] = 1 if mul_high_result[k] != 0
+    col witness mul_hi_inv[N_LIMBS];                // Inverse of mul_high_result[k] when non-zero
+
+    // For MUL_LOW: verify the high result limbs are computed correctly
+    for (int k = 0; k < N_LIMBS; k++) {
+        // mul_high_result[k] = (mul_pp_hi[k] + mul_carry_hi[k]) mod 2^32
+        // And mul_carry_hi[k+1] = (mul_pp_hi[k] + mul_carry_hi[k]) / 2^32
+        sel * is_mul_low * (mul_pp_hi[k] + mul_carry_hi[k] - mul_high_result[k] - mul_carry_hi[k+1] * 2**32) === 0;
+
+        // Boolean constraint for mul_hi_nz
+        mul_hi_nz[k] * (1 - mul_hi_nz[k]) === 0;
+
+        // Inverse trick: mul_high_result[k] * mul_hi_inv[k] = mul_hi_nz[k]
+        sel * is_mul_low * (mul_high_result[k] * mul_hi_inv[k] - mul_hi_nz[k]) === 0;
+
+        // If mul_hi_nz[k] = 0, then mul_high_result[k] must be 0
+        sel * is_mul_low * (1 - mul_hi_nz[k]) * mul_high_result[k] === 0;
+    }
+
+    // Sum of all high non-zero indicators
+    const expr mul_hi_any_nz = mul_hi_nz[0] + mul_hi_nz[1] + mul_hi_nz[2] + mul_hi_nz[3]
+                             + mul_hi_nz[4] + mul_hi_nz[5] + mul_hi_nz[6] + mul_hi_nz[7];
+
+    // Inverse for checking if mul_hi_any_nz is zero
+    col witness mul_hi_any_inv;
+
+    // overflow = 1 iff mul_hi_any_nz > 0 (i.e., any high limb is non-zero)
+    // Constraint 1: mul_hi_any_nz * mul_hi_any_inv = overflow
+    // (if mul_hi_any_nz != 0, then overflow must be 1)
+    sel * is_mul_low * (mul_hi_any_nz * mul_hi_any_inv - overflow) === 0;
+
+    // Constraint 2: (1 - overflow) * mul_hi_any_nz = 0
+    // (if overflow = 0, then mul_hi_any_nz must be 0)
+    sel * is_mul_low * (1 - overflow) * mul_hi_any_nz === 0;
 
     // MUL_HIGH overflow is always 0 (no bits beyond 512)
     sel * is_mul_high * overflow === 0;

@@ -109,6 +109,11 @@ impl<F: PrimeField64> U256DelegationSM<F> {
         // Set overflow
         trace.set_overflow(input.overflow);
 
+        // Compute EQ auxiliary columns if this is an EQ operation
+        if op == U256Operation::Eq {
+            self.compute_eq_columns(input, trace);
+        }
+
         // Compute MUL columns if this is a MUL operation
         if op == U256Operation::MulLow || op == U256Operation::MulHigh {
             self.compute_mul_columns(input, trace);
@@ -116,6 +121,42 @@ impl<F: PrimeField64> U256DelegationSM<F> {
 
         // Set selector (active row)
         trace.set_sel(true);
+    }
+
+    /// Computes the EQ auxiliary columns for equality verification.
+    fn compute_eq_columns(
+        &self,
+        input: &U256DelegationInput,
+        trace: &mut U256DelegationTraceRowType<F>,
+    ) {
+        let mut eq_any_diff_sum = 0u64;
+
+        for i in 0..8 {
+            let diff = input.a[i] as i64 - input.b[i] as i64;
+            let is_nonzero = diff != 0;
+
+            trace.set_eq_diff_nz(i, is_nonzero);
+
+            if is_nonzero {
+                // Compute modular inverse of diff in the field
+                // For the constraint (a[i] - b[i]) * inv = eq_diff_nz[i] when diff != 0
+                let inv = F::inverse(&F::from_i64(diff)).as_canonical_u64();
+                trace.set_eq_diff_inv(i, inv);
+                eq_any_diff_sum += 1;
+            } else {
+                // When diff = 0, inv can be anything (we use 0)
+                trace.set_eq_diff_inv(i, 0);
+            }
+        }
+
+        // Compute inverse of eq_any_diff_sum for the final overflow check
+        if eq_any_diff_sum > 0 {
+            let inv = F::inverse(&F::from_u64(eq_any_diff_sum)).as_canonical_u64();
+            trace.set_eq_any_diff_inv(inv);
+        } else {
+            // When sum = 0 (all equal), inv can be anything
+            trace.set_eq_any_diff_inv(0);
+        }
     }
 
     /// Computes the MUL auxiliary columns for schoolbook multiplication.
@@ -203,9 +244,38 @@ impl<F: PrimeField64> U256DelegationSM<F> {
             trace.set_mul_carry_hi(i, mul_carry_hi[i]);
         }
 
-        // mul_has_high_bits: for MUL_LOW, overflow is set if any high bit is non-zero
-        let has_high_bits = input.overflow;
-        trace.set_mul_has_high_bits(has_high_bits);
+        // For MUL_LOW: compute the high result limbs and overflow auxiliary columns
+        if input.operation() == U256Operation::MulLow {
+            let mut mul_hi_any_nz_sum = 0u64;
+
+            for k in 0..8 {
+                // high_result[k] = (mul_pp_hi[k] + mul_carry_hi[k]) mod 2^32
+                let total = mul_pp_hi[k] as u128 + mul_carry_hi[k] as u128;
+                let high_result_k = (total & 0xFFFF_FFFF) as u32;
+
+                trace.set_mul_high_result(k, high_result_k);
+
+                let is_nonzero = high_result_k != 0;
+                trace.set_mul_hi_nz(k, is_nonzero);
+
+                if is_nonzero {
+                    // Compute modular inverse
+                    let inv = F::inverse(&F::from_u64(high_result_k as u64)).as_canonical_u64();
+                    trace.set_mul_hi_inv(k, inv);
+                    mul_hi_any_nz_sum += 1;
+                } else {
+                    trace.set_mul_hi_inv(k, 0);
+                }
+            }
+
+            // Compute inverse of mul_hi_any_nz_sum
+            if mul_hi_any_nz_sum > 0 {
+                let inv = F::inverse(&F::from_u64(mul_hi_any_nz_sum)).as_canonical_u64();
+                trace.set_mul_hi_any_inv(inv);
+            } else {
+                trace.set_mul_hi_any_inv(0);
+            }
+        }
     }
 
     /// Computes the carry chain for the given input.
@@ -257,9 +327,8 @@ impl<F: PrimeField64> U256DelegationSM<F> {
                 // When carry_in=0: no carries needed
             }
             U256Operation::Eq | U256Operation::MulLow | U256Operation::MulHigh => {
-                // EQ: no arithmetic carries
-                // MUL: carries computed differently (partial products)
-                // For MUL, we would need extended logic - see Task #6
+                // EQ: no arithmetic carries (equality check uses separate auxiliary columns)
+                // MUL: carries computed via mul_carry_lo/mul_carry_hi in compute_mul_columns()
             }
         }
 
@@ -279,8 +348,8 @@ impl<F: PrimeField64> U256DelegationSM<F> {
         let total_inputs: usize = inputs.iter().map(|c| c.len()).sum();
         assert!(total_inputs <= num_rows);
 
-        tracing::debug!(
-            "··· Creating U256Delegation instance [{} / {} rows filled {:.2}%]",
+        tracing::info!(
+            "U256DelegationSM: Creating trace [{} / {} rows filled {:.2}%]",
             total_inputs,
             num_rows,
             total_inputs as f64 / num_rows as f64 * 100.0

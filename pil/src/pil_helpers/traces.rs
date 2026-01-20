@@ -426,7 +426,15 @@ trace_row!(U256DelegationTraceRow<F> {
  mul_pp_hi:[u64; 8],     // Partial product accumulators for high half
  mul_carry_lo:[u64; 9],  // Carries for low half (index 0-8)
  mul_carry_hi:[u64; 9],  // Carries for high half (index 0-8)
- mul_has_high_bits:bit,  // Overflow indicator for MUL_LOW
+ // EQ auxiliary columns for overflow verification
+ eq_diff_nz:[bit; 8],    // eq_diff_nz[i] = 1 if a[i] != b[i]
+ eq_diff_inv:[u64; 8],   // Inverse of (a[i] - b[i]) when non-zero (as canonical u64)
+ eq_any_diff_inv:u64,    // Inverse of sum(eq_diff_nz) when non-zero (as canonical u64)
+ // MUL_LOW auxiliary columns for overflow verification
+ mul_high_result:[u32; 8],  // Computed high 256-bit result limbs
+ mul_hi_nz:[bit; 8],        // mul_hi_nz[k] = 1 if mul_high_result[k] != 0
+ mul_hi_inv:[u64; 8],       // Inverse of mul_high_result[k] when non-zero (as canonical u64)
+ mul_hi_any_inv:u64,        // Inverse of sum(mul_hi_nz) when non-zero (as canonical u64)
 });
 // U256 delegation: 2^20 rows (1M operations max), airgroup 0, air ID 18
 pub type U256DelegationTrace<F> = GenericTrace<U256DelegationTraceRow<F>, 1048576, 0, 18>;
