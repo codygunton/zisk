@@ -25,6 +25,7 @@ precomp-sha256f = { workspace = true }
 precomp-big-int = { workspace = true }
 precomp-arith-eq = { workspace = true }
 precomp-arith-eq-384 = { workspace = true }
+precomp-u256-delegation = { workspace = true }
 zisk-pil = { workspace = true }
 ziskemu = { workspace = true }
 zisk-core = { workspace = true }

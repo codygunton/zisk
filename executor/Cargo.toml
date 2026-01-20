@@ -36,6 +36,7 @@ precomp-sha256f = { workspace = true }
 precomp-arith-eq = { workspace = true }
 precomp-arith-eq-384 = { workspace = true }
 precomp-big-int = { workspace = true }
+precomp-u256-delegation = { workspace = true }
 
 sm-arith = { workspace = true }
 sm-binary = { workspace = true }
