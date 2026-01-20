@@ -109,4 +109,6 @@ const int OP_COMPLEX_ADD_BN254 = 0xFC;
 const int OP_COMPLEX_SUB_BN254 = 0xFD;
 const int OP_COMPLEX_MUL_BN254 = 0xFE;
 
+const int OP_U256_DELEGATION = 0xE1;  // U256 delegation for zksync-os (CSR 0x7ca)
+
 const int OP_HALT = 0xFF;

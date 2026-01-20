@@ -60,11 +60,13 @@ pub const KECCAKF_AIR_IDS: &[usize] = &[16];
 
 pub const SHA_256_F_AIR_IDS: &[usize] = &[17];
 
-pub const SPECIFIED_RANGES_AIR_IDS: &[usize] = &[18];
+pub const U256_DELEGATION_AIR_IDS: &[usize] = &[18];
 
-pub const VIRTUAL_TABLE_0_AIR_IDS: &[usize] = &[19];
+pub const SPECIFIED_RANGES_AIR_IDS: &[usize] = &[19];
 
-pub const VIRTUAL_TABLE_1_AIR_IDS: &[usize] = &[20];
+pub const VIRTUAL_TABLE_0_AIR_IDS: &[usize] = &[20];
+
+pub const VIRTUAL_TABLE_1_AIR_IDS: &[usize] = &[21];
 
 
 //PUBLICS
@@ -388,6 +390,46 @@ trace_row!(VirtualTable1TraceRow<F> {
  multiplicity:[F; 16],
 });
 pub type VirtualTable1Trace<F> = GenericTrace<VirtualTable1TraceRow<F>, 1048576, 0, 20>;
+
+// U256 Delegation trace (manually added - not auto-generated from PIL yet)
+trace_row!(U256DelegationTraceRow<F> {
+ // Operand A limbs (8 x 32-bit)
+ a:[u32; 8],
+ // Operand B limbs (8 x 32-bit)
+ b:[u32; 8],
+ // Result low chunks (8 x 16-bit)
+ r_lo:[u16; 8],
+ // Result high chunks (8 x 16-bit)
+ r_hi:[u16; 8],
+ // Addresses
+ addr_a:u32,
+ addr_b:u32,
+ // Control and step
+ control:u8,
+ step:ubit(40),
+ // Operation selectors
+ is_add:bit,
+ is_sub:bit,
+ is_sub_neg:bit,
+ is_mul_low:bit,
+ is_mul_high:bit,
+ is_eq:bit,
+ is_memcpy:bit,
+ // Carry chain (9 elements: carry[0]=carry_in, carry[8]=overflow)
+ carry_in:bit,
+ carry:[bit; 9],
+ // Overflow and selector
+ overflow:bit,
+ sel:bit,
+ // MUL auxiliary columns
+ mul_pp_lo:[u64; 8],     // Partial product accumulators for low half
+ mul_pp_hi:[u64; 8],     // Partial product accumulators for high half
+ mul_carry_lo:[u64; 9],  // Carries for low half (index 0-8)
+ mul_carry_hi:[u64; 9],  // Carries for high half (index 0-8)
+ mul_has_high_bits:bit,  // Overflow indicator for MUL_LOW
+});
+// U256 delegation: 2^20 rows (1M operations max), airgroup 0, air ID 18
+pub type U256DelegationTrace<F> = GenericTrace<U256DelegationTraceRow<F>, 1048576, 0, 18>;
 
 
 trace_row!(RomRomTraceRow<F> {
