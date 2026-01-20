@@ -76,9 +76,7 @@ cargo build -p ziskemu -p cargo-zisk -p ziskclib --release
 echo ""
 echo "=== Building zksync-os for Zisk ==="
 cd "$ZKSYNCOS_DIR/zksync_os"
-# BENCHMARK: delegation disabled for non-delegation proving measurement
-# Original: FEATURES="proving,print_debug_info,delegation,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak" ./build.sh --machine zisk
-FEATURES="proving,print_debug_info,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak" ./build.sh --machine zisk
+FEATURES="proving,print_debug_info,delegation,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak" ./build.sh --machine zisk
 cd "$REPO_ROOT"
 
 # ROM setup (skip if no proving key available)
