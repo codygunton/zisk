@@ -134,15 +134,7 @@ mkdir -p "$OUTPUT_DIR"
 
 LOG_FILE="/tmp/prove-block-zisk.log"
 
-if [[ -n "$VERBOSE_FLAGS" ]]; then
-    echo "Running ZisK GPU prover with $VERBOSE_FLAGS (output in $LOG_FILE)..."
-else
-    echo "Running ZisK GPU prover in quiet mode (output in $LOG_FILE)..."
-fi
-echo ""
-
-# Run prover with witness file for oracle data
-# Verbose output goes to log file only; terminal shows just errors/final status
+# Build prover command
 PROVER_CMD="./target/release/cargo-zisk prove \
     --elf $ELF_FILE \
     --witness-file $WITNESS_FILE \
@@ -156,19 +148,34 @@ if [[ -n "$VERBOSE_FLAGS" ]]; then
     PROVER_CMD="$PROVER_CMD $VERBOSE_FLAGS"
 fi
 
-if $PROVER_CMD > "$LOG_FILE" 2>&1; then
-    echo "=== Proving SUCCEEDED ==="
-    echo "Output: $OUTPUT_DIR/"
-    ls -la "$OUTPUT_DIR/" 2>/dev/null || true
+# Run prover with appropriate output handling
+if [[ "${VERBOSE:-1}" == "0" ]]; then
+    # Quiet mode: suppress all output
+    echo "Running ZisK GPU prover in quiet mode..."
+    if $PROVER_CMD > /dev/null 2>&1; then
+        echo "=== Proving SUCCEEDED ==="
+    else
+        EXIT_CODE=$?
+        echo "=== Proving FAILED (exit code $EXIT_CODE) ==="
+        echo "Re-run with VERBOSE=1 to see logs"
+    fi
 else
-    EXIT_CODE=$?
-    echo "=== Proving FAILED (exit code $EXIT_CODE) ==="
+    # Normal/verbose mode: log to file
+    echo "Running ZisK GPU prover (output in $LOG_FILE)..."
     echo ""
-    echo "Last 50 lines of log:"
-    echo "----------------------------------------"
-    tail -50 "$LOG_FILE"
-    echo "----------------------------------------"
+    if $PROVER_CMD > "$LOG_FILE" 2>&1; then
+        echo "=== Proving SUCCEEDED ==="
+        echo "Output: $OUTPUT_DIR/"
+        ls -la "$OUTPUT_DIR/" 2>/dev/null || true
+    else
+        EXIT_CODE=$?
+        echo "=== Proving FAILED (exit code $EXIT_CODE) ==="
+        echo ""
+        echo "Last 50 lines of log:"
+        echo "----------------------------------------"
+        tail -50 "$LOG_FILE"
+        echo "----------------------------------------"
+    fi
+    echo ""
+    echo "Full log: $LOG_FILE"
 fi
-
-echo ""
-echo "Full log: $LOG_FILE"
