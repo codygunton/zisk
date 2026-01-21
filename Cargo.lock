@@ -5866,6 +5866,7 @@ dependencies = [
  "symbolic-common",
  "symbolic-demangle",
  "sysinfo 0.37.2",
+ "tracing",
  "vergen",
  "zisk-common",
  "zisk-core",
