@@ -16,7 +16,7 @@ use std::fmt;
 #[allow(dead_code)]
 type FieldExtension<F> = [F; 3];
 
-pub const PILOUT_HASH: &str = "f4672672ae07dad4f607d8c859a467c0d73055727795a468ca1ac071b80147bb";
+pub const PILOUT_HASH: &str = "c044355d928a81cf0ff6451bac07c10226126298f2973e0c4fab8887b8921e4a";
 
 //AIRGROUP CONSTANTS
 
@@ -60,7 +60,7 @@ pub const KECCAKF_AIR_IDS: &[usize] = &[16];
 
 pub const SHA_256_F_AIR_IDS: &[usize] = &[17];
 
-pub const U256_DELEGATION_AIR_IDS: &[usize] = &[18];
+pub const U_256_DELEGATION_AIR_IDS: &[usize] = &[18];
 
 pub const SPECIFIED_RANGES_AIR_IDS: &[usize] = &[19];
 
@@ -359,85 +359,51 @@ pub type Sha256fTrace<F> = GenericTrace<Sha256fTraceRow<F>, 262144, 0, 17>;
 pub type Sha256fTracePacked<F> = GenericTrace<Sha256fTraceRowPacked<F>, 262144, 0, 17>;
 
 
+trace_row!(U256DelegationFixedRow<F> {
+ __L1__: F,
+});
+pub type U256DelegationFixed<F> = GenericTrace<U256DelegationFixedRow<F>, 1048576, 0, 18>;
+
+trace_row!(U256DelegationTraceRow<F> {
+ a:[u32; 8], b:[u32; 8], r_lo:[u16; 8], r_hi:[u16; 8], addr_a:u32, addr_b:u32, control:u8, step:ubit(40), is_add:bit, is_sub:bit, is_sub_neg:bit, is_mul_low:bit, is_mul_high:bit, is_eq:bit, is_memcpy:bit, carry_in:bit, carry:[bit; 9], overflow:bit, sel:bit, eq_diff_nz:[bit; 8], eq_diff_inv:[u64; 8], eq_any_diff_inv:u64, mul_pp_lo:[u64; 8], mul_pp_hi:[u64; 8], mul_carry_lo:[u64; 9], mul_carry_hi:[u64; 9], mul_high_result:[u32; 8], mul_hi_nz:[bit; 8], mul_hi_inv:[u64; 8], mul_hi_any_inv:u64,
+});
+pub type U256DelegationTrace<F> = GenericTrace<U256DelegationTraceRow<F>, 1048576, 0, 18>;
+
+
+pub type U256DelegationTracePacked<F> = GenericTrace<U256DelegationTraceRowPacked<F>, 1048576, 0, 18>;
+
+
 trace_row!(SpecifiedRangesFixedRow<F> {
  RANGE: [F; 33], __L1__: F,
 });
-pub type SpecifiedRangesFixed<F> = GenericTrace<SpecifiedRangesFixedRow<F>, 1048576, 0, 18>;
+pub type SpecifiedRangesFixed<F> = GenericTrace<SpecifiedRangesFixedRow<F>, 1048576, 0, 19>;
 
 trace_row!(SpecifiedRangesTraceRow<F> {
  mul:[F; 33],
 });
-pub type SpecifiedRangesTrace<F> = GenericTrace<SpecifiedRangesTraceRow<F>, 1048576, 0, 18>;
+pub type SpecifiedRangesTrace<F> = GenericTrace<SpecifiedRangesTraceRow<F>, 1048576, 0, 19>;
 
 
 trace_row!(VirtualTable0FixedRow<F> {
  UID: [F; 17], column: [F; 91], __L1__: F,
 });
-pub type VirtualTable0Fixed<F> = GenericTrace<VirtualTable0FixedRow<F>, 1048576, 0, 19>;
+pub type VirtualTable0Fixed<F> = GenericTrace<VirtualTable0FixedRow<F>, 1048576, 0, 20>;
 
 trace_row!(VirtualTable0TraceRow<F> {
  multiplicity:[F; 17],
 });
-pub type VirtualTable0Trace<F> = GenericTrace<VirtualTable0TraceRow<F>, 1048576, 0, 19>;
+pub type VirtualTable0Trace<F> = GenericTrace<VirtualTable0TraceRow<F>, 1048576, 0, 20>;
 
 
 trace_row!(VirtualTable1FixedRow<F> {
  UID: [F; 16], column: [F; 128], __L1__: F,
 });
-pub type VirtualTable1Fixed<F> = GenericTrace<VirtualTable1FixedRow<F>, 1048576, 0, 20>;
+pub type VirtualTable1Fixed<F> = GenericTrace<VirtualTable1FixedRow<F>, 1048576, 0, 21>;
 
 trace_row!(VirtualTable1TraceRow<F> {
  multiplicity:[F; 16],
 });
-pub type VirtualTable1Trace<F> = GenericTrace<VirtualTable1TraceRow<F>, 1048576, 0, 20>;
-
-// U256 Delegation trace (manually added - not auto-generated from PIL yet)
-trace_row!(U256DelegationTraceRow<F> {
- // Operand A limbs (8 x 32-bit)
- a:[u32; 8],
- // Operand B limbs (8 x 32-bit)
- b:[u32; 8],
- // Result low chunks (8 x 16-bit)
- r_lo:[u16; 8],
- // Result high chunks (8 x 16-bit)
- r_hi:[u16; 8],
- // Addresses
- addr_a:u32,
- addr_b:u32,
- // Control and step
- control:u8,
- step:ubit(40),
- // Operation selectors
- is_add:bit,
- is_sub:bit,
- is_sub_neg:bit,
- is_mul_low:bit,
- is_mul_high:bit,
- is_eq:bit,
- is_memcpy:bit,
- // Carry chain (9 elements: carry[0]=carry_in, carry[8]=overflow)
- carry_in:bit,
- carry:[bit; 9],
- // Overflow and selector
- overflow:bit,
- sel:bit,
- // MUL auxiliary columns
- mul_pp_lo:[u64; 8],     // Partial product accumulators for low half
- mul_pp_hi:[u64; 8],     // Partial product accumulators for high half
- mul_carry_lo:[u64; 9],  // Carries for low half (index 0-8)
- mul_carry_hi:[u64; 9],  // Carries for high half (index 0-8)
- // EQ auxiliary columns for overflow verification
- eq_diff_nz:[bit; 8],    // eq_diff_nz[i] = 1 if a[i] != b[i]
- eq_diff_inv:[u64; 8],   // Inverse of (a[i] - b[i]) when non-zero (as canonical u64)
- eq_any_diff_inv:u64,    // Inverse of sum(eq_diff_nz) when non-zero (as canonical u64)
- // MUL_LOW auxiliary columns for overflow verification
- mul_high_result:[u32; 8],  // Computed high 256-bit result limbs
- mul_hi_nz:[bit; 8],        // mul_hi_nz[k] = 1 if mul_high_result[k] != 0
- mul_hi_inv:[u64; 8],       // Inverse of mul_high_result[k] when non-zero (as canonical u64)
- mul_hi_any_inv:u64,        // Inverse of sum(mul_hi_nz) when non-zero (as canonical u64)
-});
-// U256 delegation: 2^20 rows (1M operations max), airgroup 0, air ID 18
-pub type U256DelegationTrace<F> = GenericTrace<U256DelegationTraceRow<F>, 1048576, 0, 18>;
+pub type VirtualTable1Trace<F> = GenericTrace<VirtualTable1TraceRow<F>, 1048576, 0, 21>;
 
 
 trace_row!(RomRomTraceRow<F> {
@@ -558,6 +524,10 @@ values!(Sha256fAirGroupValues<F> {
  gsum_result: FieldExtension<F>,
 });
 
+values!(U256DelegationAirGroupValues<F> {
+ gsum_result: FieldExtension<F>,
+});
+
 values!(SpecifiedRangesAirGroupValues<F> {
  gsum_result: FieldExtension<F>,
 });
@@ -656,4 +626,11 @@ pub const PACKED_INFO: &[(usize, usize, PackedInfoConst)] = &[
         num_packed_words: 3,
         unpack_info: &[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 8, 8, 4, 40, 1, 1],
     }),
+    (0, 18, PackedInfoConst {
+        is_packed: true,
+        num_packed_words: 71,
+        unpack_info: &[32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 32, 32, 8, 40, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 32, 32, 32, 32, 32, 32, 32, 32, 1, 1, 1, 1, 1, 1, 1, 1, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+    }),
 ];
+// Re-export for backwards compatibility
+pub use U_256_DELEGATION_AIR_IDS as U256_DELEGATION_AIR_IDS;

@@ -136,7 +136,7 @@ airtemplate U256Delegation(const int N = 2**20, const int operation_bus_id = OPE
     // eq_diff_nz[i] = 1 if a[i] != b[i], 0 otherwise
     // eq_diff_inv[i] = inverse of (a[i] - b[i]) when non-zero (arbitrary when zero)
     col witness bits(1) eq_diff_nz[N_LIMBS];
-    col witness eq_diff_inv[N_LIMBS];
+    col witness bits(64) eq_diff_inv[N_LIMBS];
 
     // For each limb, verify eq_diff_nz correctly indicates if a[i] != b[i]
     for (int i = 0; i < N_LIMBS; i++) {
@@ -157,7 +157,7 @@ airtemplate U256Delegation(const int N = 2**20, const int operation_bus_id = OPE
                            + eq_diff_nz[4] + eq_diff_nz[5] + eq_diff_nz[6] + eq_diff_nz[7];
 
     // Inverse for checking if eq_any_diff is zero
-    col witness eq_any_diff_inv;
+    col witness bits(64) eq_any_diff_inv;
 
     // overflow = 1 iff eq_any_diff = 0 (i.e., all limbs match)
     // Constraint 1: eq_any_diff * eq_any_diff_inv = 1 - overflow
@@ -282,7 +282,7 @@ airtemplate U256Delegation(const int N = 2**20, const int operation_bus_id = OPE
     // Auxiliary columns to compute and verify high limbs for MUL_LOW
     col witness bits(32) mul_high_result[N_LIMBS];  // The computed high 256-bit result limbs
     col witness bits(1) mul_hi_nz[N_LIMBS];         // mul_hi_nz[k] = 1 if mul_high_result[k] != 0
-    col witness mul_hi_inv[N_LIMBS];                // Inverse of mul_high_result[k] when non-zero
+    col witness bits(64) mul_hi_inv[N_LIMBS];       // Inverse of mul_high_result[k] when non-zero
 
     // For MUL_LOW: verify the high result limbs are computed correctly
     for (int k = 0; k < N_LIMBS; k++) {
@@ -305,7 +305,7 @@ airtemplate U256Delegation(const int N = 2**20, const int operation_bus_id = OPE
                              + mul_hi_nz[4] + mul_hi_nz[5] + mul_hi_nz[6] + mul_hi_nz[7];
 
     // Inverse for checking if mul_hi_any_nz is zero
-    col witness mul_hi_any_inv;
+    col witness bits(64) mul_hi_any_inv;
 
     // overflow = 1 iff mul_hi_any_nz > 0 (i.e., any high limb is non-zero)
     // Constraint 1: mul_hi_any_nz * mul_hi_any_inv = overflow
