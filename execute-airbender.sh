@@ -1,19 +1,19 @@
 #!/bin/bash
 set -e
 
-# Benchmark RISC-V cycles for Airbender (32-bit) execution
+# Execute Ethereum blocks using Airbender (RV32IM) simulator
 #
-# This script builds the Airbender binary and runs eth_runner to measure
-# cycle counts. Uses Airbender's built-in simulator (not Zisk).
+# This script builds the Airbender binary and runs eth_runner to execute
+# blocks. Uses Airbender's built-in simulator (not ZisK).
 #
-# Usage: ./bench-airbender-cycles.sh [BLOCK_NUMBER]
+# Usage: ./execute-airbender.sh [BLOCK_NUMBER]
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 # Default to block with Keccak MPT witness (requires block_hashes.json)
 # Block 22244135 has 155 txs (~12.8M gas) but missing block_hashes.json
 # Block 23598300 is empty (0 txs) but has all required files for Keccak MPT
-BLOCK_NUMBER="${1:-24198369}"  # Ethereum block with 426 txs, ~45M gas
+BLOCK_NUMBER="${1:-24198369}" # Ethereum block with 426 txs, ~45M gas
 # BLOCK_NUMBER="${1:-22244135}"
 # BLOCK_NUMBER="${1:-19299001}"
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
@@ -25,7 +25,7 @@ echo "Block: $BLOCK_NUMBER"
 echo ""
 
 # Clear log file
-> /tmp/airbender-bench.log
+> /tmp/airbender-execute.log
 
 # Build the Airbender binary (output to log)
 # Enable print_debug_info to see UART output from the guest
@@ -34,7 +34,7 @@ echo "Building Airbender binary..."
     cd "$ZKSYNCOS_DIR/zksync_os"
     FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,print_debug_info,global-alloc,pectra" ./build.sh --machine airbender
     cd "$REPO_ROOT"
-} >> /tmp/airbender-bench.log 2>&1
+} >> /tmp/airbender-execute.log 2>&1
 
 # Verify binary exists
 if [[ ! -f "$ZKSYNCOS_DIR/zksync_os/zksync_os_airbender.bin" ]]; then
@@ -69,12 +69,12 @@ export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 # SKIP_SIMULATION=1 to skip RISC-V simulation (faster, but no cycle counts)
 SKIP_SIM_FLAG=""
 if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
-    echo "SKIP_SIMULATION=1: Skipping RISC-V simulation (bootloader only)" >> /tmp/airbender-bench.log
+    echo "SKIP_SIMULATION=1: Skipping RISC-V simulation (bootloader only)" >> /tmp/airbender-execute.log
 fi
 
 # Detect which command to use based on available files
 if [[ -f "$BLOCK_DIR/witness.json" ]]; then
-    echo "Using single-eth-run (Keccak MPT model with witness.json)" >> /tmp/airbender-bench.log
+    echo "Using single-eth-run (Keccak MPT model with witness.json)" >> /tmp/airbender-execute.log
     if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
         SKIP_SIM_FLAG="--skip-witness"
     fi
@@ -82,25 +82,25 @@ if [[ -f "$BLOCK_DIR/witness.json" ]]; then
     # cycle_marker enables cycle count output from the simulator
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
         --features "pectra,rig/unlimited_native" \
-        -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
+        -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-execute.log 2>&1
 elif [[ -f "$BLOCK_DIR/prestatetrace.json" ]]; then
-    echo "Using single-run (flat storage model with prestatetrace.json)" >> /tmp/airbender-bench.log
+    echo "Using single-run (flat storage model with prestatetrace.json)" >> /tmp/airbender-execute.log
     if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
         SKIP_SIM_FLAG="--only-forward"
     fi
     # cycle_marker enables cycle count output from the simulator
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
         --features "rig/unlimited_native,cycle_marker" \
-        -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-bench.log 2>&1
+        -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-execute.log 2>&1
 else
-    echo "ERROR: Block directory doesn't have required files (witness.json or prestatetrace.json)" >> /tmp/airbender-bench.log
+    echo "ERROR: Block directory doesn't have required files (witness.json or prestatetrace.json)" >> /tmp/airbender-execute.log
     exit 1
 fi
 cd "$REPO_ROOT"
 
 echo ""
-echo "Log: /tmp/airbender-bench.log"
+echo "Log: /tmp/airbender-execute.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(Running block:|Block gas used:|Simulator.*executed|Native used|Effective cycles|net cycles|Total delegations|cycles to finish|Took.*cycles|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\]|GasMismatch|panicked|All good)" /tmp/airbender-bench.log || true
+grep -E "(Running block:|Block gas used:|Simulator.*executed|Native used|Effective cycles|net cycles|Total delegations|cycles to finish|Took.*cycles|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\]|GasMismatch|panicked|All good)" /tmp/airbender-execute.log || true

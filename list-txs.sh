@@ -1,14 +1,14 @@
 #!/bin/bash
-# Lists transactions from the zisk bench log
+# Lists transactions from the ZisK execution log
 # Usage: ./list-txs.sh [log_file] [--revert|--no-revert] [-s|--summary]
 
-LOG_FILE="/tmp/zisk-bench.log"
+LOG_FILE="/tmp/zisk-execute.log"
 SUMMARY=0
-FILTER=""  # "", "revert", or "no-revert"
+FILTER="" # "", "revert", or "no-revert"
 
 for arg in "$@"; do
     case $arg in
-        -s|--summary)
+        -s | --summary)
             SUMMARY=1
             ;;
         --revert)

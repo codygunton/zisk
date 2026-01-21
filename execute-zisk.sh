@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# Benchmark RISC-V cycles for Zisk (64-bit) execution
+# Execute Ethereum blocks using ZisK (RV64IM) emulator
 #
-# Usage: ./bench-zisk-cycles.sh [BLOCK_NUMBER]
+# Usage: ./execute-zisk.sh [BLOCK_NUMBER]
 #
 # Environment variables:
 #   SETUP=1           - Run ./setup.sh first (default: 1)
@@ -15,7 +15,7 @@ cd "$REPO_ROOT"
 SETUP="${SETUP:-1}"
 # BLOCK_NUMBER="${1:-22244135}"
 # BLOCK_NUMBER="${1:-19299001}"  # Flat storage block (no witness.json)
-BLOCK_NUMBER="${1:-24198369}"  # Ethereum block with 426 txs, ~45M gas
+BLOCK_NUMBER="${1:-24198369}" # Ethereum block with 426 txs, ~45M gas
 ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"
@@ -25,12 +25,12 @@ echo "Block: $BLOCK_NUMBER"
 echo ""
 
 # Clear log file
-> /tmp/zisk-bench.log
+> /tmp/zisk-execute.log
 
 # Optionally run setup first
 if [[ "$SETUP" == "1" ]]; then
     echo "Running setup..."
-    ./setup.sh >> /tmp/zisk-bench.log 2>&1
+    ./setup.sh >> /tmp/zisk-execute.log 2>&1
 fi
 
 # Force rebuild of eth_runner to pick up any changes
@@ -56,7 +56,7 @@ export VERBOSE_ORACLE=1 # Uncomment to see detailed oracle query logs
 # SKIP_SIMULATION=1 to skip ZisK emulation (faster, but no cycle counts)
 SKIP_SIM_FLAG=""
 if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
-    echo "SKIP_SIMULATION=1: Skipping ZisK emulation (bootloader only)" >> /tmp/zisk-bench.log
+    echo "SKIP_SIMULATION=1: Skipping ZisK emulation (bootloader only)" >> /tmp/zisk-execute.log
     SKIP_SIM_FLAG="--skip-witness"
 fi
 
@@ -64,12 +64,12 @@ fi
 # pectra feature enables type 3 (blob) and type 4 (EIP-7702) transaction support
 RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features "pectra,rig/zisk-witness,rig/no_print,rig/unlimited_native" \
-    -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/zisk-bench.log 2>&1
+    -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/zisk-execute.log 2>&1
 cd "$REPO_ROOT"
 
 echo ""
-echo "Log: /tmp/zisk-bench.log"
+echo "Log: /tmp/zisk-execute.log"
 echo ""
 
 # Extract key metrics from log
-grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*G2 deserialization|\[GUEST\].*Withdrawals root|\[GUEST\].*Finished processing|\[GUEST\].*Using ZisK Keccak|All good)" /tmp/zisk-bench.log || true
+grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*G2 deserialization|\[GUEST\].*Withdrawals root|\[GUEST\].*Finished processing|\[GUEST\].*Using ZisK Keccak|All good)" /tmp/zisk-execute.log || true
