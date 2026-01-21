@@ -150,7 +150,9 @@ pub enum ExtOperationData<D> {
 
 const KECCAK_OP: u8 = ZiskOp::Keccak.code();
 const SHA256_OP: u8 = ZiskOp::Sha256.code();
-// U256 delegation uses CSR 0x7ca, not a ZiskOp. Use 0xca as identifier.
+// U256 delegation uses CSR 0x7ca (memory-mapped interface), not a ZiskOp instruction.
+// This is architecturally correct: U256 is a delegation mechanism, not a CPU instruction.
+// Using 0xca (lower byte of CSR address) as identifier is acceptable.
 pub const U256_OP: u8 = 0xca;
 
 /// Number of u64 values used to encode a U256 operation in mem_reads.
@@ -663,6 +665,9 @@ impl OperationBusData<u64> {
 
     /// Creates U256 delegation operation bus payload from raw data.
     ///
+    /// Encodes a BigInt arithmetic operation (add, sub, mul with overflow detection)
+    /// delegated to the U256 precompile via CSR 0x7ca. The payload is written to
+    /// the operation bus for later verification by the U256 delegation AIR.
     /// # Arguments
     /// * `step` - The step at which the U256 operation occurred
     /// * `control` - The control mask (operation selector)
@@ -714,7 +719,8 @@ impl OperationBusData<u64> {
         buffer[U256_ADDR_B] = addr_b;
         buffer[U256_A_LIMBS_START..U256_A_LIMBS_START + 4].copy_from_slice(&a_packed);
         buffer[U256_B_LIMBS_START..U256_B_LIMBS_START + 4].copy_from_slice(&b_packed);
-        buffer[U256_RESULT_LIMBS_START..U256_RESULT_LIMBS_START + 4].copy_from_slice(&result_packed);
+        buffer[U256_RESULT_LIMBS_START..U256_RESULT_LIMBS_START + 4]
+            .copy_from_slice(&result_packed);
         buffer[U256_OVERFLOW] = overflow as u64;
 
         &buffer[..OPERATION_BUS_U256_DATA_SIZE]
