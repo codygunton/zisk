@@ -95,7 +95,9 @@ impl<'a> Emu<'a> {
         emu.ctx.inst_ctx.regs = trace_start.regs;
 
         // Enable U256 delegation for witness replay - this must match trace generation
-        // so that handle_u256_for_replay correctly consumes mem_reads entries
+        // so that handle_u256_for_replay correctly consumes mem_reads entries.
+        // Note: This unconditional call differs from the conditional pattern in run_with_oracle.
+        // TODO: Consider adding enable_u256: bool parameter for consistency.
         emu.ctx.inst_ctx.mem.enable_u256_delegation();
 
         emu
@@ -1024,6 +1026,7 @@ impl<'a> Emu<'a> {
                     self.ctx.stats.on_memory_write(addr, 8, val);
                 }
                 // Handle U256 CSR 0x7ca delegation if needed
+                // WORKTODO: better to add a new match cases than use the handler functions?
                 self.handle_u256_if_needed(addr);
             }
             STORE_IND => {
@@ -1092,13 +1095,11 @@ impl<'a> Emu<'a> {
             let x12 = self.ctx.inst_ctx.regs[12] as u32;
             let step = self.ctx.inst_ctx.step;
 
-            let (a_limbs, b_limbs, result_limbs, overflow) =
-                self.ctx.inst_ctx.mem.handle_u256_delegation(
-                    x10,
-                    x11,
-                    x12,
-                    &mut self.ctx.inst_ctx.regs,
-                );
+            let (a_limbs, b_limbs, result_limbs, overflow) = self
+                .ctx
+                .inst_ctx
+                .mem
+                .handle_u256_delegation(x10, x11, x12, &mut self.ctx.inst_ctx.regs);
 
             // Pack u32 limbs into u64 (2 limbs per u64)
             let pack_limbs = |limbs: &[u32; 8]| -> [u64; 4] {
@@ -1129,7 +1130,12 @@ impl<'a> Emu<'a> {
     /// Layout: [step, addr_a, addr_b, control, a0..a3, b0..b3, r0..r3, overflow]
     /// This is used during ConsumeMemReads mode.
     #[inline(always)]
-    fn handle_u256_for_replay(&mut self, addr: u64, mem_reads: &[u64], mem_reads_index: &mut usize) {
+    fn handle_u256_for_replay(
+        &mut self,
+        addr: u64,
+        mem_reads: &[u64],
+        mem_reads_index: &mut usize,
+    ) {
         use zisk_common::U256_MEM_READS_SIZE;
 
         if self.ctx.inst_ctx.mem.is_u256_csr_write(addr) {
@@ -1595,6 +1601,46 @@ impl<'a> Emu<'a> {
     //         self.ctx.inst_ctx.sp += instruction.inc_sp;
     //     }
     // }
+
+    /// Detect if we're in an exit spin loop (pc == prev_pc means jump to self).
+    /// ZKsyncOS uses this pattern to signal completion (both success and error).
+    /// Sets `ctx.inst_ctx.end = true` if detected.
+    /// Returns true if spin loop was detected.
+    #[inline(always)]
+    fn detect_exit_spin_loop(&mut self, prev_pc: u64) -> bool {
+        if self.ctx.inst_ctx.pc == prev_pc {
+            self.ctx.inst_ctx.end = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Emit pending U256 operation to the data bus if valid.
+    /// Returns the result of write_to_bus (true if successful).
+    #[inline(always)]
+    fn emit_pending_u256<T, DB: DataBusTrait<u64, T>>(&mut self, data_bus: &mut DB) -> bool {
+        if self.ctx.inst_ctx.pending_u256.valid {
+            let pending = &self.ctx.inst_ctx.pending_u256;
+            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
+                pending.step,
+                pending.control,
+                pending.addr_a,
+                pending.addr_b,
+                &pending.a_limbs,
+                &pending.b_limbs,
+                &pending.result_limbs,
+                pending.overflow,
+                &mut self.static_array,
+            );
+            let result = data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
+            self.ctx.inst_ctx.pending_u256.valid = false;
+            result
+        } else {
+            true
+        }
+    }
+
     /// Set PC, based on current PC, current flag and current instruction
     #[inline(always)]
     pub fn set_pc(&mut self, instruction: &ZiskInst) {
@@ -1611,26 +1657,24 @@ impl<'a> Emu<'a> {
     #[inline(always)]
     pub fn run_fast(&mut self, options: &EmuOptions) {
         // Track previous PC to detect spin loops (e.g., zksync-os exit)
+        // WORKTODO: improve
         let mut prev_pc: u64 = 0;
 
         while !self.ctx.inst_ctx.end && (self.ctx.inst_ctx.step < options.max_steps) {
-            // Detect any self-loop (pc == prev_pc means jump to self)
-            // This is used by zksync-os to signal completion (both success and error)
-            if self.ctx.inst_ctx.pc == prev_pc {
+            if self.detect_exit_spin_loop(prev_pc) {
                 let inst = self.rom.get_instruction(self.ctx.inst_ctx.pc);
-                eprintln!(
+                tracing::debug!(
                     "[ZISK] Exit at PC=0x{:x} step={} (self-loop detected)",
                     self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
                 );
-                eprintln!(
+                tracing::debug!(
                     "[ZISK] Instruction: op={} set_pc={} jmp1={} jmp2={} verbose={}",
                     inst.op_str, inst.set_pc, inst.jmp_offset1, inst.jmp_offset2, inst.verbose
                 );
-                eprintln!(
+                tracing::debug!(
                     "[ZISK] Registers: ra=0x{:x} sp=0x{:x} c=0x{:x}",
                     self.ctx.inst_ctx.regs[1], self.ctx.inst_ctx.sp, self.ctx.inst_ctx.c
                 );
-                self.ctx.inst_ctx.end = true;
                 break;
             }
             prev_pc = self.ctx.inst_ctx.pc;
@@ -1640,7 +1684,7 @@ impl<'a> Emu<'a> {
 
         // Detect and report error
         if self.ctx.inst_ctx.error {
-            eprintln!(
+            tracing::error!(
                 "Emu::run_fast() finished with error at step={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
             );
@@ -1821,21 +1865,20 @@ impl<'a> Emu<'a> {
         // Store the stats option into the emulator context
         self.ctx.do_stats = options.stats || options.legacy_stats;
 
-        // Track previous PC to detect spin loops (e.g., zksync-os exit)
+        // Track previous PC to detect spin loops (e.g., zksync-os exit).
+        // This is zksync-os specific: it signals completion by spinning on a self-jump.
+        // The generic terminated() method and ctx.inst_ctx.end flag exist but don't handle this case.
         let mut prev_pc: u64 = 0;
 
         // While not done
         while !self.ctx.inst_ctx.end {
-            // Detect any self-loop (pc == prev_pc means jump to self)
-            // This is used by zksync-os to signal completion (both success and error)
-            if self.ctx.inst_ctx.pc == prev_pc {
+            if self.detect_exit_spin_loop(prev_pc) {
                 if options.verbose {
-                    println!(
+                    tracing::debug!(
                         "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
                         self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
                     );
                 }
-                self.ctx.inst_ctx.end = true;
                 break;
             }
             prev_pc = self.ctx.inst_ctx.pc;
@@ -1905,7 +1948,7 @@ impl<'a> Emu<'a> {
 
         // Detect and report error
         if self.ctx.inst_ctx.error {
-            eprintln!(
+            tracing::error!(
                 "Emu::run() finished with error at step={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
             );
@@ -1913,7 +1956,7 @@ impl<'a> Emu<'a> {
 
         // Print final step count when verbose but quiet (suppressed per-step logging)
         if options.verbose && is_quiet() {
-            eprintln!(
+            tracing::debug!(
                 "Emu::run() completed: steps={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
             );
@@ -1973,7 +2016,7 @@ impl<'a> Emu<'a> {
         // Set emulation mode
         // DEBUG: Allow bypassing GenerateMemReads mode for testing
         if std::env::var("ZISK_DEBUG_MEM_MODE").map(|v| v == "1").unwrap_or(false) {
-            eprintln!("[DEBUG] Using EmulationMode::Mem instead of GenerateMemReads");
+            tracing::debug!("[DEBUG] Using EmulationMode::Mem instead of GenerateMemReads");
             self.ctx.inst_ctx.emulation_mode = EmulationMode::Mem;
         } else {
             self.ctx.inst_ctx.emulation_mode = EmulationMode::GenerateMemReads;
@@ -1985,14 +2028,11 @@ impl<'a> Emu<'a> {
         let mut prev_pc: u64 = 0;
 
         while !self.ctx.inst_ctx.end {
-            // Detect any self-loop (pc == prev_pc means jump to self)
-            // This is used by zksync-os to signal completion (both success and error)
-            if self.ctx.inst_ctx.pc == prev_pc {
-                eprintln!(
+            if self.detect_exit_spin_loop(prev_pc) {
+                tracing::debug!(
                     "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
                     self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
                 );
-                self.ctx.inst_ctx.end = true;
                 break;
             }
             prev_pc = self.ctx.inst_ctx.pc;
@@ -2031,7 +2071,7 @@ impl<'a> Emu<'a> {
 
         // Detect and report error
         if self.ctx.inst_ctx.error {
-            eprintln!(
+            tracing::error!(
                 "Emu::par_run() finished with error at step={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
             );
@@ -2328,23 +2368,7 @@ impl<'a> Emu<'a> {
             data_bus.write_to_bus(OPERATION_BUS_ID, operation_payload);
         }
 
-        // Emit pending U256 operation if any
-        if self.ctx.inst_ctx.pending_u256.valid {
-            let pending = &self.ctx.inst_ctx.pending_u256;
-            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
-                pending.step,
-                pending.control,
-                pending.addr_a,
-                pending.addr_b,
-                &pending.a_limbs,
-                &pending.b_limbs,
-                &pending.result_limbs,
-                pending.overflow,
-                &mut self.static_array,
-            );
-            data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
-            self.ctx.inst_ctx.pending_u256.valid = false;
-        }
+        self.emit_pending_u256(data_bus);
 
         // #[cfg(feature = "sp")]
         // self.set_sp(instruction);
@@ -2399,23 +2423,7 @@ impl<'a> Emu<'a> {
             data_bus.write_to_bus(OPERATION_BUS_ID, operation_payload);
         }
 
-        // Emit pending U256 operation if any
-        if self.ctx.inst_ctx.pending_u256.valid {
-            let pending = &self.ctx.inst_ctx.pending_u256;
-            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
-                pending.step,
-                pending.control,
-                pending.addr_a,
-                pending.addr_b,
-                &pending.a_limbs,
-                &pending.b_limbs,
-                &pending.result_limbs,
-                pending.overflow,
-                &mut self.static_array,
-            );
-            data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
-            self.ctx.inst_ctx.pending_u256.valid = false;
-        }
+        self.emit_pending_u256(data_bus);
 
         // #[cfg(feature = "sp")]
         // self.set_sp(instruction);
@@ -2536,23 +2544,7 @@ impl<'a> Emu<'a> {
             _continue = data_bus.write_to_bus(OPERATION_BUS_ID, operation_payload);
         }
 
-        // Emit pending U256 operation if any
-        if self.ctx.inst_ctx.pending_u256.valid {
-            let pending = &self.ctx.inst_ctx.pending_u256;
-            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
-                pending.step,
-                pending.control,
-                pending.addr_a,
-                pending.addr_b,
-                &pending.a_limbs,
-                &pending.b_limbs,
-                &pending.result_limbs,
-                pending.overflow,
-                &mut self.static_array,
-            );
-            _continue = _continue && data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
-            self.ctx.inst_ctx.pending_u256.valid = false;
-        }
+        _continue = _continue && self.emit_pending_u256(data_bus);
 
         // Get rom bus data
         let rom_payload = RomBusData::from_instruction(instruction, &self.ctx.inst_ctx);
@@ -2579,6 +2571,9 @@ impl<'a> Emu<'a> {
         reg_trace: &mut EmuRegTrace,
         step_range_check: Option<&mut [u32]>,
     ) -> EmuFullTraceStep<F> {
+        if self.ctx.inst_ctx.pc == 0 {
+            println!("PC=0 CRASH (step:{})", self.ctx.inst_ctx.step);
+        }
         let instruction = self.rom.get_instruction(self.ctx.inst_ctx.pc);
 
         reg_trace.clear_reg_step_ranges();
