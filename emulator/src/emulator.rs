@@ -243,6 +243,8 @@ impl ZiskEmulator {
         oracle_bytes: Option<Arc<Vec<u8>>>,
     ) -> Result<Vec<EmuTrace>, ZiskEmulatorErr> {
         // DEBUG: Use run_with_oracle path (like benchmark) instead of par_run_with_oracle
+        // Answer: prove-block-zisk.sh uses par_run_with_oracle (parallel execution) by default.
+        // This debug path is only for single-threaded debugging when ZISK_DEBUG_RUN_MODE=1.
         if std::env::var("ZISK_DEBUG_RUN_MODE").map(|v| v == "1").unwrap_or(false) {
             eprintln!("[DEBUG] Using run_with_oracle path instead of par_run_with_oracle");
             // Must clear chunk_size to avoid callback requirement
@@ -327,6 +329,7 @@ impl ZiskEmulator {
         let mut emu = Emu::new(rom);
 
         // Enable U256 delegation for trace replay (needed to update regs[12] overflow flag)
+        // Note: See emu.rs:from_emu_trace_start for TODO about making this conditional.
         emu.ctx.inst_ctx.mem.enable_u256_delegation();
 
         // Run the emulation
