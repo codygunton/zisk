@@ -32,7 +32,7 @@ PIL2_COMPILER="${WORKSPACE_DIR}/pil2-compiler"
 PIL2_PROOFMAN_JS="${WORKSPACE_DIR}/pil2-proofman-js"
 
 # Find pil2-proofman in cargo cache (matches version in Cargo.toml)
-PIL2_PROOFMAN=$(find ~/.cargo/git/checkouts/pil2-proofman-* -maxdepth 2 -name "pil2-components" -type d 2>/dev/null | head -1 | xargs dirname)
+PIL2_PROOFMAN=$(find ~/.cargo/git/checkouts/pil2-proofman-* -maxdepth 2 -name "pil2-components" -type d 2> /dev/null | head -1 | xargs dirname)
 
 echo "=== ZisK Proving Key Regeneration ==="
 echo "Repository: $REPO_ROOT"
@@ -57,7 +57,7 @@ echo ""
 
 # Step 1: Generate fixed data
 echo "=== Step 1/5: Generating fixed data ==="
-cargo run --release --bin keccakf_fixed_gen
+cargo run --release --bin keccakf_expr_generator
 cargo run --release --bin arith_frops_fixed_gen
 cargo run --release --bin binary_basic_frops_fixed_gen
 cargo run --release --bin binary_extension_frops_fixed_gen
@@ -66,7 +66,7 @@ echo ""
 # Step 2: Compile PIL
 echo "=== Step 2/5: Compiling ZisK PIL ==="
 mkdir -p tmp/fixed
-node "${PIL2_COMPILER}/src/pil.js" pil/zisk.pil \
+NODE_OPTIONS="--max-old-space-size=16384" node "${PIL2_COMPILER}/src/pil.js" pil/zisk.pil \
     -I pil,"${PIL2_PROOFMAN}/pil2-components/lib/std/pil",state-machines,precompiles \
     -o pil/zisk.pilout \
     -u tmp/fixed \
@@ -79,9 +79,11 @@ rm -rf build/provingKey
 
 # Non-recursive setup (recursive has a bug in pil2-proofman-js v0.14.0)
 # To try recursive setup, set ENABLE_RECURSIVE_SETUP=1
+# Use increased heap (16GB) and stack size (16MB) for large PIL
+# Note: --stack-size not allowed in NODE_OPTIONS, must be passed directly
 if [[ "${ENABLE_RECURSIVE_SETUP}" == "1" ]]; then
     echo "Running recursive setup..."
-    node "${PIL2_PROOFMAN_JS}/src/main_setup.js" \
+    node --max-old-space-size=16384 --stack-size=16384 "${PIL2_PROOFMAN_JS}/src/main_setup.js" \
         -a ./pil/zisk.pilout \
         -b build \
         -u tmp/fixed \
@@ -89,7 +91,7 @@ if [[ "${ENABLE_RECURSIVE_SETUP}" == "1" ]]; then
         -r
 else
     echo "Running non-recursive setup..."
-    node "${PIL2_PROOFMAN_JS}/src/main_setup.js" \
+    node --max-old-space-size=16384 --stack-size=16384 "${PIL2_PROOFMAN_JS}/src/main_setup.js" \
         -a ./pil/zisk.pilout \
         -b build \
         -u tmp/fixed
