@@ -75,7 +75,7 @@ pub struct EmuOptions {
     pub read_symbols: bool,
     /// Set the number of top Regions of Interest (ROI) to display.
     /// Requires options: -S -X
-    #[clap(short = 'T', long, value_name = "TOP_ROI", default_value = "10")]
+    #[clap(short = 'T', long, value_name = "TOP_ROI", default_value = "25")]
     pub top_roi: usize,
     /// Set the number of top caller functions to show for each top ROI.
     /// Requires options: -S -X -D
@@ -93,6 +93,14 @@ pub struct EmuOptions {
     /// stderr mode adds "[GUEST] " prefix and line-buffers for cleaner output.
     #[clap(long, value_name = "ZKSYNCOS_UART", default_value = "stdout")]
     pub zksyncos_uart: String,
+    /// Define the program's main entry point name (default: main).
+    /// Requires options: -S -X -D
+    #[clap(short = 'M', long, value_name = "MAIN_NAME", default_value = "main")]
+    pub main_name: String,
+    /// Show coverage of opcodes and precompiles.
+    /// Requires option: -X
+    #[clap(long, value_name = "COVERAGE", default_value = "false")]
+    pub coverage: bool,
 }
 
 impl Default for EmuOptions {
@@ -117,11 +125,13 @@ impl Default for EmuOptions {
             store_op_output: None,
             read_symbols: false,
             roi_callers: 10,
-            top_roi: 10,
+            top_roi: 25,
             top_roi_detail: false,
             legacy_stats: false,
             zksyncos_oracle: false,
             zksyncos_uart: "stdout".to_string(),
+            coverage: false,
+            main_name: "main".to_string(),
         }
     }
 }

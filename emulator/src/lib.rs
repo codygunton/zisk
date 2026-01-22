@@ -27,6 +27,9 @@ pub mod mem_operations_stats;
 pub mod oracle_helper;
 mod regions_of_interest;
 pub mod stats;
+mod stats_cost_mark;
+mod stats_costs;
+pub mod stats_coverage_report;
 pub mod stats_report;
 pub mod witness;
 
@@ -45,6 +48,9 @@ pub use mem_operations_stats::*;
 pub use oracle_helper::*;
 pub use regions_of_interest::*;
 pub use stats::*;
+pub use stats_cost_mark::*;
+pub use stats_costs::*;
+pub use stats_coverage_report::*;
 pub use stats_report::*;
 pub use witness::{create_witness_capture_callback, WitnessCapture};
 
