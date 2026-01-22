@@ -149,6 +149,18 @@ else
     echo ""
 fi
 
+# Run ROM setup (checks ELF hash against cached artifacts)
+PROVING_KEY="${PROVING_KEY:-$REPO_ROOT/provingKey}"
+if [[ -d "$PROVING_KEY" ]]; then
+    echo "Running ROM setup (will skip if cache is current)..."
+    if ! ./target/release/cargo-zisk rom-setup --elf "$ELF_FILE" --proving-key "$PROVING_KEY" 2>&1 | tee /tmp/rom-setup.log | tail -5; then
+        echo "ERROR: ROM setup failed"
+        echo "See /tmp/rom-setup.log for details"
+        exit 1
+    fi
+    echo ""
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 LOG_FILE="/tmp/prove-block-zisk.log"
