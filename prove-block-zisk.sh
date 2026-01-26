@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Prove ZKsyncOS Ethereum blocks with ZisK GPU prover
 # Usage: ./prove-block-zisk.sh [BLOCK_NUMBER]
