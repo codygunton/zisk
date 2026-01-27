@@ -330,8 +330,7 @@ impl ZiskEmulator {
         let mut emu = Emu::new(rom);
 
         // Enable U256 delegation for trace replay (needed to update regs[12] overflow flag)
-        // Note: See emu.rs:from_emu_trace_start for TODO about making this conditional.
-        emu.ctx.inst_ctx.mem.enable_u256_delegation();
+        emu.ctx.inst_ctx.enable_u256();
 
         // Run the emulation
         emu.process_emu_trace(emu_trace, data_bus, with_mem_ops);
@@ -350,7 +349,7 @@ impl ZiskEmulator {
         let mut emu = Emu::new(rom);
 
         // Enable U256 delegation for trace replay (needed to update regs[12] overflow flag)
-        emu.ctx.inst_ctx.mem.enable_u256_delegation();
+        emu.ctx.inst_ctx.enable_u256();
 
         // Run the emulation
         emu.process_emu_traces(min_traces, chunk_id, data_bus);

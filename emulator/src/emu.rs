@@ -80,7 +80,11 @@ impl<'a> Emu<'a> {
         Emu { rom, ctx: EmuContext::default(), static_array: [0; MAX_OPERATION_DATA_SIZE] }
     }
 
-    pub fn from_emu_trace_start(rom: &'a ZiskRom, trace_start: &'a EmuTraceStart) -> Emu<'a> {
+    pub fn from_emu_trace_start(
+        rom: &'a ZiskRom,
+        trace_start: &'a EmuTraceStart,
+        enable_u256: bool,
+    ) -> Emu<'a> {
         let mut emu = Emu::new(rom);
         emu.ctx.inst_ctx.pc = trace_start.pc;
         emu.ctx.inst_ctx.sp = trace_start.sp;
@@ -90,10 +94,9 @@ impl<'a> Emu<'a> {
 
         // Enable U256 delegation for witness replay - this must match trace generation
         // so that handle_u256_for_replay correctly consumes mem_reads entries.
-        // Note: This unconditional call differs from the conditional pattern in run_with_oracle.
-        // TODO: Consider adding enable_u256: bool parameter for consistency.
-        //--the yes make this more consistent this stands out as having a code smell
-        emu.ctx.inst_ctx.mem.enable_u256_delegation();
+        if enable_u256 {
+            emu.ctx.inst_ctx.enable_u256();
+        }
 
         emu
     }
@@ -1172,7 +1175,7 @@ impl<'a> Emu<'a> {
             self.ctx.inst_ctx.regs[12] = overflow as u64;
 
             // Store pending U256 operation for bus emission
-            self.ctx.inst_ctx.pending_u256 = zisk_core::PendingU256Op {
+            self.ctx.inst_ctx.pending_u256 = Some(zisk_core::PendingU256Op {
                 valid: true,
                 step,
                 addr_a,
@@ -1182,7 +1185,7 @@ impl<'a> Emu<'a> {
                 b_limbs,
                 result_limbs,
                 overflow,
-            };
+            });
         }
     }
 
@@ -1615,25 +1618,25 @@ impl<'a> Emu<'a> {
     /// Returns the result of write_to_bus (true if successful).
     #[inline(always)]
     fn emit_pending_u256<T, DB: DataBusTrait<u64, T>>(&mut self, data_bus: &mut DB) -> bool {
-        if self.ctx.inst_ctx.pending_u256.valid {
-            let pending = &self.ctx.inst_ctx.pending_u256;
-            let u256_payload: &[u64] = OperationBusData::write_u256_payload(
-                pending.step,
-                pending.control,
-                pending.addr_a,
-                pending.addr_b,
-                &pending.a_limbs,
-                &pending.b_limbs,
-                &pending.result_limbs,
-                pending.overflow,
-                &mut self.static_array,
-            );
-            let result = data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
-            self.ctx.inst_ctx.pending_u256.valid = false;
-            result
-        } else {
-            true
+        if let Some(ref mut pending) = self.ctx.inst_ctx.pending_u256 {
+            if pending.valid {
+                let u256_payload: &[u64] = OperationBusData::write_u256_payload(
+                    pending.step,
+                    pending.control,
+                    pending.addr_a,
+                    pending.addr_b,
+                    &pending.a_limbs,
+                    &pending.b_limbs,
+                    &pending.result_limbs,
+                    pending.overflow,
+                    &mut self.static_array,
+                );
+                let result = data_bus.write_to_bus(OPERATION_BUS_ID, u256_payload);
+                pending.valid = false;
+                return result;
+            }
         }
+        true
     }
 
     /// Set PC based on instruction type and branch outcome.
@@ -1786,7 +1789,7 @@ impl<'a> Emu<'a> {
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
             // Enable U256 delegation when oracle is active (for zksync-os proving)
-            self.ctx.inst_ctx.mem.enable_u256_delegation();
+            self.ctx.inst_ctx.enable_u256();
         }
 
         // Set UART output mode
@@ -2022,7 +2025,7 @@ impl<'a> Emu<'a> {
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
             // Enable U256 delegation when oracle is active (for zksync-os proving)
-            self.ctx.inst_ctx.mem.enable_u256_delegation();
+            self.ctx.inst_ctx.enable_u256();
         }
 
         // Set UART output mode

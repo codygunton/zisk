@@ -234,7 +234,8 @@ impl<F: PrimeField64> MainInstance<F> {
         last_reg_values: bool,
     ) -> (u64, Vec<u64>) {
         // Initialize the emulator with the start state of the emu trace
-        let mut emu = Emu::from_emu_trace_start(zisk_rom, &min_trace.start_state);
+        // Enable U256 because witness replay always needs it for bus emission
+        let mut emu = Emu::from_emu_trace_start(zisk_rom, &min_trace.start_state, true);
         let mut mem_reads_index: usize = 0;
 
         for trace in main_trace {
