@@ -229,12 +229,6 @@ impl ZiskWitnessLibrary<Goldilocks> for WitnessLib<Goldilocks> {
         self.executor.as_ref().map(|executor| executor.get_execution_result())
     }
 
-    fn set_oracle_callback(&self, callback: zisk_core::OracleCallback) {
-        if let Some(executor) = &self.executor {
-            executor.set_oracle_callback(callback);
-        }
-    }
-
     fn set_oracle_bytes(&self, bytes: Vec<u8>) {
         if let Some(executor) = &self.executor {
             executor.set_oracle_bytes(bytes);

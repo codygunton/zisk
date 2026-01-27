@@ -60,7 +60,7 @@ use zisk_common::ExecutorStatsEvent;
 use crossbeam::atomic::AtomicCell;
 
 use zisk_common::EmuTrace;
-use zisk_core::{OracleCallback, ZiskRom, MAX_INPUT_SIZE};
+use zisk_core::{ZiskRom, MAX_INPUT_SIZE};
 use ziskemu::{EmuOptions, ZiskEmulator};
 
 use crate::StaticSMBundle;
@@ -145,11 +145,6 @@ pub struct ZiskExecutor<F: PrimeField64> {
 
     shmem_input_writer: [Arc<Mutex<Option<SharedMemoryWriter>>>; AsmServices::SERVICES.len()],
 
-    /// Optional oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
-    /// DEPRECATED: Use `oracle_bytes` instead for proper per-thread oracle instances.
-    //--really deprecated? should we remove?
-    oracle_callback: Mutex<Option<OracleCallback>>,
-
     /// Raw oracle bytes for creating per-thread oracle instances during parallel trace generation.
     /// This replaces the shared `oracle_callback` to fix the parallel oracle consumption bug.
     oracle_bytes: Mutex<Option<Arc<Vec<u8>>>>,
@@ -220,7 +215,6 @@ impl<F: PrimeField64> ZiskExecutor<F> {
             asm_shmem_mo: Arc::new(Mutex::new(asm_shmem_mo)),
             asm_shmem_rh: Arc::new(Mutex::new(None)),
             shmem_input_writer: std::array::from_fn(|_| Arc::new(Mutex::new(None))),
-            oracle_callback: Mutex::new(None),
             oracle_bytes: Mutex::new(None),
         }
     }
@@ -228,15 +222,6 @@ impl<F: PrimeField64> ZiskExecutor<F> {
     pub fn set_stdin(&self, stdin: ZiskStdin) {
         let mut guard = self.stdin.lock().unwrap();
         *guard = stdin;
-    }
-
-    /// Sets the oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
-    ///
-    /// This callback will be invoked during emulator execution when the program
-    /// reads from or writes to the oracle CSR address.
-    pub fn set_oracle_callback(&self, callback: OracleCallback) {
-        let mut guard = self.oracle_callback.lock().expect("oracle_callback lock poisoned");
-        *guard = Some(callback);
     }
 
     /// Sets the raw oracle bytes for per-thread oracle instantiation during parallel execution.

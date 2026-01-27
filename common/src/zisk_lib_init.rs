@@ -3,7 +3,6 @@ use std::{path::PathBuf, time::Instant};
 use fields::PrimeField64;
 use proofman_common::VerboseMode;
 use witness::WitnessLibrary;
-use zisk_core::OracleCallback;
 
 use crate::{io::ZiskStdin, ExecutorStats};
 
@@ -32,18 +31,6 @@ pub struct Stats {
 pub trait ZiskWitnessLibrary<F: PrimeField64> {
     fn set_stdin(&self, stdin: ZiskStdin);
     fn execution_result(&self) -> Option<(ZiskExecutionResult, ExecutorStats)>;
-    /// Sets the zksync-os oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) queries.
-    ///
-    /// This oracle provides non-deterministic data (block headers, state proofs, transaction
-    /// data, etc.) to the guest program during execution. The term "zksync-os oracle" is used
-    /// to distinguish this specific oracle interface from generic cryptographic oracle concepts.
-    /// The callback is set once before execution and called on each CSR read/write.
-    ///
-    /// This callback will be invoked during emulator execution when the program
-    /// reads from or writes to the oracle CSR address. Use `zisk_oracle::ZiskOracle`
-    /// with `ziskemu::create_oracle_callback` to create an appropriate callback.
-    fn set_oracle_callback(&self, callback: OracleCallback);
-
     /// Sets the raw oracle bytes for per-thread oracle instantiation during parallel execution.
     ///
     /// Each thread in `compute_minimal_traces_with_oracle` will create its own `Replay64Oracle`

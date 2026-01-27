@@ -9,7 +9,6 @@ use proofman_common::{initialize_logger, ParamsGPU, ProofOptions};
 use std::path::PathBuf;
 use zisk_common::io::ZiskStdin;
 use zisk_common::ExecutorStats;
-use zisk_core::OracleCallback;
 use zisk_distributed_common::LoggingConfig;
 
 use anyhow::Result;
@@ -76,10 +75,6 @@ impl ProverEngine for EmuProver {
 
     fn set_stdin(&self, stdin: ZiskStdin) {
         self.core_prover.backend.witness_lib.set_stdin(stdin);
-    }
-
-    fn set_oracle_callback(&self, callback: OracleCallback) {
-        self.core_prover.backend.set_oracle_callback(callback);
     }
 
     fn set_oracle_bytes(&self, bytes: Vec<u8>) {
