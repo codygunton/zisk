@@ -30,7 +30,8 @@ fi
 # Use --uart stderr for clear guest output with [GUEST] prefix
 echo ""
 echo "=== Running replay mode ==="
-ZISK_QUIET="${ZISK_QUIET:-1}" ./target/release/ziskemu \
+# Per-step logging: set RUST_LOG=ziskemu::emu=trace (very verbose)
+./target/release/ziskemu \
     -e "$ELF_FILE" \
     -i "$WITNESS_HEX" \
     --oracle \

@@ -1,15 +1,9 @@
 use std::mem;
-use std::sync::OnceLock;
 
 use crate::{
     ElfSymbolReader, EmuContext, EmuFullTraceStep, EmuOptions, EmuRegTrace, ParEmuOptions,
 };
 
-/// Cached check for ZISK_QUIET env var (suppresses per-step logging)
-fn is_quiet() -> bool {
-    static QUIET: OnceLock<bool> = OnceLock::new();
-    *QUIET.get_or_init(|| std::env::var("ZISK_QUIET").map(|v| v == "1").unwrap_or(false))
-}
 use fields::PrimeField64;
 use mem_common::MemHelpers;
 use riscv::RiscVRegisters;
@@ -1642,10 +1636,16 @@ impl<'a> Emu<'a> {
         }
     }
 
-    /// Set PC, based on current PC, current flag and current instruction
+    /// Set PC based on instruction type and branch outcome.
+    //--you should have answered why we had to add this change to support zksyncos; look at the
+    //diff with forkbase
+    ///
+    /// Three cases:
+    /// 1. `instruction.set_pc = true`: Unconditional jump, PC = c + jmp_offset1
+    /// 2. `flag = true`: Conditional branch taken, PC = current_pc + jmp_offset1
+    /// 3. `flag = false`: Branch not taken / sequential, PC = current_pc + jmp_offset2
     #[inline(always)]
     pub fn set_pc(&mut self, instruction: &ZiskInst) {
-        //--explain why this change was needed
         self.ctx.inst_ctx.pc = if instruction.set_pc {
             (self.ctx.inst_ctx.c as i64 + instruction.jmp_offset1) as u64
         } else if self.ctx.inst_ctx.flag {
@@ -1780,8 +1780,9 @@ impl<'a> Emu<'a> {
         // Context, where the state of the execution is stored and modified at every execution step
         self.ctx = self.create_emu_context(inputs.clone());
 
-        // Set oracle callback after context creation (context creation resets memory)
-        //--say more about why
+        // Oracle callback must be set AFTER context creation because create_emu_context()
+        // resets all memory state to defaults. If set before, it would be lost.
+        // The callback wraps the oracle provider and enables witness recording during execution.
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
             // Enable U256 delegation when oracle is active (for zksync-os proving)
@@ -1904,14 +1905,11 @@ impl<'a> Emu<'a> {
                 break;
             }
             prev_pc = self.ctx.inst_ctx.pc;
-            //--I think this quiet flat should be just handled using the oither logging paradigm
-            // Per-step logging can be suppressed with ZISK_QUIET=1
-            if options.verbose && !is_quiet() {
-                println!(
-                    "Emu::run() step={} ctx.pc={:#x}",
-                    self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
-                );
-            }
+            // Per-step logging: use RUST_LOG=ziskemu::emu=trace to enable
+            tracing::trace!(
+                "Emu::run() step={} ctx.pc={:#x}",
+                self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
+            );
             // Check trace PC
             if options.tracerv && (self.ctx.inst_ctx.pc & 0b11 == 0) {
                 self.ctx.trace_pc = self.ctx.inst_ctx.pc;
@@ -1978,14 +1976,12 @@ impl<'a> Emu<'a> {
             );
         }
 
-        // Print final step count when verbose but quiet (suppressed per-step logging)
-        if options.verbose && is_quiet() {
-            tracing::debug!(
-                "Emu::run() completed: steps={} pc=0x{:x}",
-                self.ctx.inst_ctx.step,
-                self.ctx.inst_ctx.pc
-            );
-        }
+        // Completion summary: use RUST_LOG=ziskemu::emu=debug to see
+        tracing::debug!(
+            "Emu::run() completed: steps={} pc=0x{:x}",
+            self.ctx.inst_ctx.step,
+            self.ctx.inst_ctx.pc
+        );
 
         // Print stats report
         if self.ctx.do_stats {

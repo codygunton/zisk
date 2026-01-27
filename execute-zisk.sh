@@ -51,7 +51,7 @@ cd "$ETH_RUNNER_DIR"
 export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 export LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:$LIBRARY_PATH"
 export VERBOSE_ORACLE=1 # Uncomment to see detailed oracle query logs
-# export ZISK_QUIET=1  # Uncomment to suppress zisk output
+# Per-step logging: set RUST_LOG=ziskemu::emu=trace (very verbose)
 
 # SKIP_SIMULATION=1 to skip ZisK emulation (faster, but no cycle counts)
 SKIP_SIM_FLAG=""

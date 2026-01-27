@@ -42,11 +42,10 @@ ln -sf zksync_os_zisk.bin "$ZKSYNCOS_DIR/zksync_os/evm_replay.bin"
 ln -sf zksync_os_zisk.elf "$ZKSYNCOS_DIR/zksync_os/evm_replay.elf"
 
 echo "Running eth_runner with Zisk witness generation for block $BLOCK_NUMBER..."
-# ZISK_QUIET=1 suppresses per-step logging (12M+ lines)
+# Per-step logging controlled by RUST_LOG (trace level is very verbose)
 cd "$ETH_RUNNER_DIR"
 export OVERRIDE_ZKSYNC_OS_PATH="$ZKSYNCOS_DIR/zksync_os"
 LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:${LIBRARY_PATH:-}" \
-    ZISK_QUIET=1 \
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
     --features rig/no_print,rig/unlimited_native,rig/zisk-witness \
     -- single-run \

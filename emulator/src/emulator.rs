@@ -123,11 +123,10 @@ impl ZiskEmulator {
             .map(|(output, _regs)| output)
     }
 
-    //-- What's a better name? _with_zisk_output?
-    /// Processes a Zisk rom and returns both output buffer and final register values.
+    /// Processes a Zisk ROM and returns both output buffer and final register values.
     ///
-    /// This is useful for compatibility with airbender which reads output from registers x10-x17.
-    /// Returns: (output_buffer, registers_x10_to_x17_as_u32)
+    /// Returns `(output, [x10..x17])` for compatibility with Airbender, which reads
+    /// execution results from registers x10-x17 as u32 values.
     pub fn process_rom_with_regs(
         rom: &ZiskRom,
         inputs: &[u8],
@@ -246,8 +245,7 @@ impl ZiskEmulator {
         // Answer: prove-block-zisk.sh uses par_run_with_oracle (parallel execution) by default.
         // This debug path is only for single-threaded debugging when ZISK_DEBUG_RUN_MODE=1.
         if std::env::var("ZISK_DEBUG_RUN_MODE").map(|v| v == "1").unwrap_or(false) {
-            //--use canonical logging
-            eprintln!("[DEBUG] Using run_with_oracle path instead of par_run_with_oracle");
+            tracing::debug!("Using run_with_oracle path instead of par_run_with_oracle (ZISK_DEBUG_RUN_MODE=1)");
             // Must clear chunk_size to avoid callback requirement
             let mut debug_options = options.clone();
             debug_options.chunk_size = None;
