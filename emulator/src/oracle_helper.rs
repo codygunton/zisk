@@ -5,14 +5,13 @@
 //! - **`ZiskOracle`**: Live oracle for real-time query processing
 //! - **`ReplayOracle`**: Pre-recorded u32 witness data replay (simple sequential)
 //! - **`Replay64Oracle`**: Combines u32 pairs into u64 for 64-bit RISC-V guests
-//! - **`ProtocolAwareReplayOracle`**: Full CSR 0x7c0 protocol simulation with state tracking
 //!
 //! Each function wraps the oracle in `Arc<Mutex<>>` and returns an `OracleCallback`
 //! that can be set on the emulator's memory context via `Mem::set_oracle_callback()`.
 
 use std::sync::{Arc, Mutex};
 use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
-use zisk_oracle::processors::{ProtocolAwareReplayOracle, Replay64Oracle, ReplayOracle};
+use zisk_oracle::processors::{Replay64Oracle, ReplayOracle};
 use zisk_oracle::ZiskOracle;
 
 // Future enhancement: Replace callback-based interface with trait-based Oracle approach.
@@ -71,44 +70,6 @@ pub fn create_oracle_callback(oracle: ZiskOracle) -> OracleCallback {
 /// emu.ctx.inst_ctx.mem.set_oracle_callback(callback);
 /// ```
 pub fn create_replay_oracle_callback(oracle: ReplayOracle) -> OracleCallback {
-    let oracle = Arc::new(oracle);
-
-    Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
-        match op {
-            OracleOp::Read => oracle.read() as u64,
-            OracleOp::Write(val) => {
-                oracle.write(val as u32);
-                0
-            }
-        }
-    }))
-}
-
-/// Creates an `OracleCallback` that wraps a `ProtocolAwareReplayOracle`.
-///
-/// This oracle understands the CSR 0x7c0 protocol and injects response
-/// lengths correctly. Use this for replaying witness data from inputs.bin.
-///
-/// Unlike `create_replay_oracle_callback`, this version:
-/// - Tracks writes to understand which query is being made
-/// - Injects the correct response length on first read after query completion
-/// - Returns data from the buffer on subsequent reads
-///
-/// # Example
-///
-/// ```ignore
-/// use zisk_oracle::processors::ProtocolAwareReplayOracle;
-/// use ziskemu::create_protocol_replay_callback;
-/// use std::fs;
-///
-/// // Load witness/inputs file
-/// let data = fs::read("inputs.bin").expect("read inputs");
-/// let replay_oracle = ProtocolAwareReplayOracle::from_bytes(&data);
-///
-/// let callback = create_protocol_replay_callback(replay_oracle);
-/// emu.ctx.inst_ctx.mem.set_oracle_callback(callback);
-/// ```
-pub fn create_protocol_replay_callback(oracle: ProtocolAwareReplayOracle) -> OracleCallback {
     let oracle = Arc::new(oracle);
 
     Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
