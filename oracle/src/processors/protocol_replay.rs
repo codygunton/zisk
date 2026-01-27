@@ -1,4 +1,6 @@
 //! Protocol-aware replay processor for pre-recorded oracle responses.
+//--do we need both the ReplayOracle class and this one? if so update the commen here better to
+//explain why we need both.
 //!
 //! Unlike `ReplayOracle` which simply returns sequential u32 values, this processor
 //! understands the CSR 0x7c0 oracle protocol and injects response lengths appropriately.
@@ -186,16 +188,23 @@ impl ProtocolAwareReplayOracle {
         match *state {
             ReplayState::QueryComplete { query_type } => {
                 // First read after query - return response length
-                let response_size = self.query_sizes.get(&query_type).copied().unwrap_or_else(|| {
-                    eprintln!("[ORACLE] WARNING: Unknown query type 0x{:08x}, returning 0", query_type);
-                    0
-                });
+                let response_size =
+                    self.query_sizes.get(&query_type).copied().unwrap_or_else(|| {
+                        eprintln!(
+                            "[ORACLE] WARNING: Unknown query type 0x{:08x}, returning 0",
+                            query_type
+                        );
+                        0
+                    });
 
                 if response_size == VARIABLE_SIZE_MARKER {
                     // Variable-size query: read the length from the data buffer
                     let pos = self.position.fetch_add(1, Ordering::SeqCst);
                     let actual_size = if pos < self.data.len() { self.data[pos] } else { 0 };
-                    eprintln!("[ORACLE] Query 0x{:08x} variable size -> {} words (pos={})", query_type, actual_size, pos);
+                    eprintln!(
+                        "[ORACLE] Query 0x{:08x} variable size -> {} words (pos={})",
+                        query_type, actual_size, pos
+                    );
 
                     if actual_size == 0 {
                         *state = ReplayState::Idle;

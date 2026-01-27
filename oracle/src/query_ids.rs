@@ -1,6 +1,7 @@
 //! Oracle query ID constants.
 //!
 //! These values match the zk_ee oracle query ID definitions.
+//--verify that these are all in use or at least potentially in use
 
 /// Top bit (0x80_00_00_00) reserved
 pub const RESERVED_SUBSPACE_MASK: u32 = 0x80_00_00_00;

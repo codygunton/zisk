@@ -6,6 +6,7 @@
 /// 1. First write: query type (u32)
 /// 2. Second write: input length in u32 words
 /// 3. Subsequent writes: input data (u32 words packed into usize)
+//--explain why this is needed
 pub struct QueryBuffer {
     query_type: u32,
     expected_len: Option<usize>,

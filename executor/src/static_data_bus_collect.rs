@@ -72,6 +72,7 @@ pub struct StaticDataBusCollect<D> {
     pub rom_collector: Vec<(usize, RomCollector)>,
 
     /// U256 delegation collectors
+    //--explain what these do and why are these needed?
     pub u256_delegation_collector: Vec<(usize, U256DelegationCollector)>,
 
     /// Queue of pending data transfers to be processed.

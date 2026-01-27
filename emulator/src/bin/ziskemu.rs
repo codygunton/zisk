@@ -17,6 +17,10 @@ fn main() {
 
     // Create oracle callback if zksyncos_oracle flag is set
     // Uses ReplayOracle to replay u32 witness data directly.
+    //--say more about what this replay model is and why it to used nz in the new guest program
+    //well that reviewers of this pull requests can better understand what's going on
+    //--let's also get rid of this logging here and any other auxiliary logging of this or for
+    //clarity of the pr  the but we can keep conditional logging  especially uart logging
     // The witness file from zksync-os contains u32 values in big-endian format.
     // The 64-bit guest handles combining u32 pairs into u64 via io_oracle.
     let oracle_callback = if options.zksyncos_oracle {
@@ -26,7 +30,8 @@ fn main() {
             }
 
             // Load the inputs file as oracle replay data
-            let witness_data = fs::read(inputs_path).expect("Could not read inputs file for oracle");
+            let witness_data =
+                fs::read(inputs_path).expect("Could not read inputs file for oracle");
 
             if options.verbose {
                 println!(

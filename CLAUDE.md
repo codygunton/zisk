@@ -20,16 +20,5 @@ Use `prove-block-zisk.sh` for proving development. This script:
 
 Do NOT attempt to rebuild with `cargo build --features gpu` during development iterations - the build environment issues with Intel libraries are already handled by the script.
 
-## Current State
-
-ZKsyncOS is built with the `zisk_keccak` feature, which uses ZisK's native Keccak precompile (CSR 0x800) for the Ethereum MPT. This is different from Airbender's Keccak delegation protocol (CSR 0x7CB).
-
-The execute-zisk.sh script completes successfully, processing real Ethereum blocks with Keccak MPT state proofs.
-
-## Notes
-
-- Blake2s delegation (CSR 0x7C7) support was removed from ZisK as it is not needed for Ethereum execution. The earlier zisk-integration branches used Blake2s for the storage tree, but the current implementation uses Keccak.
-- U256 delegation (CSR 0x7CA) is still supported for BigInt arithmetic operations.
-
 # Tools
 gcc binutils for risc-v are installed as  riscv64-elf-foo (e.g.,  riscv64-elf-objdump).

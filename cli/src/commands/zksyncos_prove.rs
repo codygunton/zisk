@@ -27,6 +27,8 @@ use zisk_sdk::{ProverClient, ZiskProveResult};
         .multiple(false)
         .required(false)
 ))]
+//--which of these arguments  our new for this command relative to the existing prove command
+//answer the same question for the run command as well
 pub struct ZiskZkSyncOsProve {
     /// Path to zksync-os ELF file (e.g., evm_replay.elf)
     #[clap(short = 'e', long)]

@@ -147,6 +147,7 @@ pub struct ZiskExecutor<F: PrimeField64> {
 
     /// Optional oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
     /// DEPRECATED: Use `oracle_bytes` instead for proper per-thread oracle instances.
+    //--really deprecated? should we remove?
     oracle_callback: Mutex<Option<OracleCallback>>,
 
     /// Raw oracle bytes for creating per-thread oracle instances during parallel trace generation.
@@ -269,7 +270,10 @@ impl<F: PrimeField64> ZiskExecutor<F> {
         // Each thread gets its own Replay64Oracle instance with independent position counter.
         let has_oracle = self.oracle_bytes.lock().expect("oracle_bytes lock").is_some();
         let num_threads = if has_oracle {
-            tracing::info!("Using {}-threaded execution for oracle replay (per-thread oracles)", Self::NUM_THREADS);
+            tracing::info!(
+                "Using {}-threaded execution for oracle replay (per-thread oracles)",
+                Self::NUM_THREADS
+            );
             Self::NUM_THREADS
         } else {
             Self::NUM_THREADS

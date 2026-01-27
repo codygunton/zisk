@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-
+//--the double check that everything is needed in this file that everything's in use somewhere
 /// Load witness file in airbender format (hex-encoded Vec<u32>).
 ///
 /// The witness format is:

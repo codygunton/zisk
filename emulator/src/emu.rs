@@ -98,6 +98,7 @@ impl<'a> Emu<'a> {
         // so that handle_u256_for_replay correctly consumes mem_reads entries.
         // Note: This unconditional call differs from the conditional pattern in run_with_oracle.
         // TODO: Consider adding enable_u256: bool parameter for consistency.
+        //--the yes make this more consistent this stands out as having a code smell
         emu.ctx.inst_ctx.mem.enable_u256_delegation();
 
         emu
@@ -1644,6 +1645,7 @@ impl<'a> Emu<'a> {
     /// Set PC, based on current PC, current flag and current instruction
     #[inline(always)]
     pub fn set_pc(&mut self, instruction: &ZiskInst) {
+        //--explain why this change was needed
         self.ctx.inst_ctx.pc = if instruction.set_pc {
             (self.ctx.inst_ctx.c as i64 + instruction.jmp_offset1) as u64
         } else if self.ctx.inst_ctx.flag {
@@ -1657,7 +1659,6 @@ impl<'a> Emu<'a> {
     #[inline(always)]
     pub fn run_fast(&mut self, options: &EmuOptions) {
         // Track previous PC to detect spin loops (e.g., zksync-os exit)
-        // WORKTODO: improve
         let mut prev_pc: u64 = 0;
 
         while !self.ctx.inst_ctx.end && (self.ctx.inst_ctx.step < options.max_steps) {
@@ -1665,15 +1666,22 @@ impl<'a> Emu<'a> {
                 let inst = self.rom.get_instruction(self.ctx.inst_ctx.pc);
                 tracing::debug!(
                     "[ZISK] Exit at PC=0x{:x} step={} (self-loop detected)",
-                    self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
+                    self.ctx.inst_ctx.pc,
+                    self.ctx.inst_ctx.step
                 );
                 tracing::debug!(
                     "[ZISK] Instruction: op={} set_pc={} jmp1={} jmp2={} verbose={}",
-                    inst.op_str, inst.set_pc, inst.jmp_offset1, inst.jmp_offset2, inst.verbose
+                    inst.op_str,
+                    inst.set_pc,
+                    inst.jmp_offset1,
+                    inst.jmp_offset2,
+                    inst.verbose
                 );
                 tracing::debug!(
                     "[ZISK] Registers: ra=0x{:x} sp=0x{:x} c=0x{:x}",
-                    self.ctx.inst_ctx.regs[1], self.ctx.inst_ctx.sp, self.ctx.inst_ctx.c
+                    self.ctx.inst_ctx.regs[1],
+                    self.ctx.inst_ctx.sp,
+                    self.ctx.inst_ctx.c
                 );
                 break;
             }
@@ -1686,7 +1694,8 @@ impl<'a> Emu<'a> {
         if self.ctx.inst_ctx.error {
             tracing::error!(
                 "Emu::run_fast() finished with error at step={} pc=0x{:x}",
-                self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
+                self.ctx.inst_ctx.step,
+                self.ctx.inst_ctx.pc
             );
         }
     }
@@ -1772,6 +1781,7 @@ impl<'a> Emu<'a> {
         self.ctx = self.create_emu_context(inputs.clone());
 
         // Set oracle callback after context creation (context creation resets memory)
+        //--say more about why
         if let Some(oracle_cb) = oracle_callback {
             self.ctx.inst_ctx.mem.set_oracle_callback(oracle_cb);
             // Enable U256 delegation when oracle is active (for zksync-os proving)
@@ -1887,12 +1897,14 @@ impl<'a> Emu<'a> {
                 if options.verbose {
                     tracing::debug!(
                         "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
-                        self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
+                        self.ctx.inst_ctx.pc,
+                        self.ctx.inst_ctx.step
                     );
                 }
                 break;
             }
             prev_pc = self.ctx.inst_ctx.pc;
+            //--I think this quiet flat should be just handled using the oither logging paradigm
             // Per-step logging can be suppressed with ZISK_QUIET=1
             if options.verbose && !is_quiet() {
                 println!(
@@ -1961,7 +1973,8 @@ impl<'a> Emu<'a> {
         if self.ctx.inst_ctx.error {
             tracing::error!(
                 "Emu::run() finished with error at step={} pc=0x{:x}",
-                self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
+                self.ctx.inst_ctx.step,
+                self.ctx.inst_ctx.pc
             );
         }
 
@@ -1969,7 +1982,8 @@ impl<'a> Emu<'a> {
         if options.verbose && is_quiet() {
             tracing::debug!(
                 "Emu::run() completed: steps={} pc=0x{:x}",
-                self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
+                self.ctx.inst_ctx.step,
+                self.ctx.inst_ctx.pc
             );
         }
 
@@ -2042,7 +2056,8 @@ impl<'a> Emu<'a> {
             if self.detect_exit_spin_loop(prev_pc) {
                 tracing::debug!(
                     "Detected exit spin loop at PC={:#x}, step={}. Terminating.",
-                    self.ctx.inst_ctx.pc, self.ctx.inst_ctx.step
+                    self.ctx.inst_ctx.pc,
+                    self.ctx.inst_ctx.step
                 );
                 break;
             }
@@ -2084,7 +2099,8 @@ impl<'a> Emu<'a> {
         if self.ctx.inst_ctx.error {
             tracing::error!(
                 "Emu::par_run() finished with error at step={} pc=0x{:x}",
-                self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
+                self.ctx.inst_ctx.step,
+                self.ctx.inst_ctx.pc
             );
         }
 

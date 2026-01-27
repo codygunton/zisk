@@ -2,6 +2,7 @@
 //!
 //! This module provides utilities to capture oracle reads during Zisk emulation,
 //! producing a witness file that can be replayed later.
+//--say more about why
 
 use std::sync::{Arc, Mutex};
 use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
@@ -92,23 +93,24 @@ where
     let reads: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
     let reads_clone = Arc::clone(&reads);
 
-    let callback: OracleCallback = Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
-        match op {
-            OracleOp::Read => {
-                let value = {
-                    let mut rf = read_fn.lock().expect("read_fn lock poisoned");
-                    rf()
-                };
-                reads.lock().expect("reads lock poisoned").push(value);
-                value as u64
+    let callback: OracleCallback =
+        Arc::new(Mutex::new(move |op: OracleOp, _mem_reader: &dyn ZiskMemoryReader| -> u64 {
+            match op {
+                OracleOp::Read => {
+                    let value = {
+                        let mut rf = read_fn.lock().expect("read_fn lock poisoned");
+                        rf()
+                    };
+                    reads.lock().expect("reads lock poisoned").push(value);
+                    value as u64
+                }
+                OracleOp::Write(val) => {
+                    let mut wf = write_fn.lock().expect("write_fn lock poisoned");
+                    wf(val as u32);
+                    0
+                }
             }
-            OracleOp::Write(val) => {
-                let mut wf = write_fn.lock().expect("write_fn lock poisoned");
-                wf(val as u32);
-                0
-            }
-        }
-    }));
+        }));
 
     (callback, reads_clone)
 }

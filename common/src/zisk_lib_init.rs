@@ -32,6 +32,9 @@ pub struct Stats {
 pub trait ZiskWitnessLibrary<F: PrimeField64> {
     fn set_stdin(&self, stdin: ZiskStdin);
     fn execution_result(&self) -> Option<(ZiskExecutionResult, ExecutorStats)>;
+    //--everywhere when we refer to an oracle let's call it a zksync-os oracle  the for clarity
+    //it'ss only applies to new instances of the term oracle though so you'll have to look at the
+    //def relative to the forkbase
     /// Sets the oracle callback for CSR 0x7c0 (NON_DETERMINISM_CSR) oracle queries.
     /// The callback is set once before execution and called on each CSR read/write.
     ///

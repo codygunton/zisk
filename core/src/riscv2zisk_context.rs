@@ -883,6 +883,8 @@ impl Riscv2ZiskContext<'_> {
     pub fn jalr(&mut self, i: &RiscvInstruction, inst_size: u64) {
         assert!(inst_size == 4 || inst_size == 2);
         let mut rom_address = i.rom_address;
+        //--let's try reverting this leaving a single line comments saying nb  the this mask is the
+        //and then i think it's more restrictive than the spec requires the check me on that
         // Per RISC-V spec: JALR clears only bit 0 of the target address (0xfffffffffffffffe),
         // not bits 0 and 1. This allows jumping to 2-byte aligned targets when the C extension
         // is enabled.

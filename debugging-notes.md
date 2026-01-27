@@ -1,3 +1,4 @@
+//--delete this
   Working ELF (pp-keccakf.elf):
   - .rodata VirtAddr = 0x8003bbd0, PhysAddr = 0x8003bbd0 (SAME)
   - Everything in ROM region uses same VirtAddr and PhysAddr

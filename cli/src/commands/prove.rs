@@ -129,6 +129,8 @@ impl ZiskProve {
         }
 
         let stdin = self.create_stdin()?;
+        //--the this is a bit ambiguous looking how can we make it more readable?  the what kind of
+        //oracle is it maybe we should give it a more description i mean descriptive name
         let oracle_bytes = self.load_oracle_bytes()?;
 
         let emulator = if cfg!(target_os = "macos") { true } else { self.emulator };
@@ -181,12 +183,16 @@ impl ZiskProve {
                 ));
             }
 
-            let witness_hex = std::fs::read_to_string(witness_path)
-                .with_context(|| format!("Failed to read witness file: {}", witness_path.display()))?;
-            let witness_bytes = hex::decode(witness_hex.trim())
-                .context("Failed to decode hex witness data")?;
+            let witness_hex = std::fs::read_to_string(witness_path).with_context(|| {
+                format!("Failed to read witness file: {}", witness_path.display())
+            })?;
+            let witness_bytes =
+                hex::decode(witness_hex.trim()).context("Failed to decode hex witness data")?;
 
-            eprintln!("[CLI] Loaded witness file with {} bytes of oracle data", witness_bytes.len());
+            eprintln!(
+                "[CLI] Loaded witness file with {} bytes of oracle data",
+                witness_bytes.len()
+            );
             tracing::info!("Loaded witness file with {} bytes of oracle data", witness_bytes.len());
 
             Ok(Some(witness_bytes))
@@ -219,6 +225,7 @@ impl ZiskProve {
             .print_command_info()
             .build()?;
 
+        // is there a better way that uses error handling here?
         if let Some(bytes) = oracle_bytes {
             eprintln!("[CLI] Setting oracle bytes on prover: {} bytes", bytes.len());
             prover.set_oracle_bytes(bytes);

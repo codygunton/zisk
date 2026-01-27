@@ -1,4 +1,5 @@
 //! Block metadata query processor.
+//--expand significantly on this comment
 
 use crate::query_ids::BLOCK_METADATA_QUERY_ID;
 use crate::{OracleError, OracleProcessor};

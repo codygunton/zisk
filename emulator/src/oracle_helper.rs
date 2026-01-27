@@ -1,4 +1,5 @@
 //! Oracle integration helpers for the emulator.
+//--more descriptive leading comment needed
 
 use std::sync::{Arc, Mutex};
 use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
@@ -12,6 +13,7 @@ use zisk_oracle::ZiskOracle;
 // improvement: define an `Oracle` trait with `read(&self) -> u64` and `write(&mut self, u64)`,
 // then have Mem hold `Option<Box<dyn Oracle>>` instead of the callback. This removes Arc<Mutex>
 // wrapping from user code and makes the interface cleaner.
+//--does this still sound like a good idea?
 /// Creates an `OracleCallback` that wraps a `ZiskOracle`.
 ///
 /// The callback routes reads and writes to the appropriate oracle methods.

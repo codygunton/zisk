@@ -100,6 +100,7 @@
 
 use crate::{M16, M3, M32, M8, REG_FIRST, REG_LAST};
 use core::fmt;
+//--should we extract the new stuff in this file to a new file for clarity?
 use std::sync::{Arc, Mutex};
 
 /// CSR 0x7c0 (NON_DETERMINISM_CSR) memory-mapped address
@@ -110,7 +111,7 @@ pub const ORACLE_CSR_ADDR: u64 = 0xa000be00;
 /// Calculated as: 0xa0008000 + 0x7ca * 8 = 0xa000be50
 pub const U256_CSR_ADDR: u64 = 0xa000be50;
 
-/// Oracle operation type for CSR 0x7c0 reads/writes.
+/// ZKsyncOS Oracle operation type for CSR 0x7c0 reads/writes.
 #[derive(Debug, Clone, Copy)]
 pub enum OracleOp {
     /// Read from the oracle CSR.
@@ -934,7 +935,6 @@ impl Mem {
                 return;
             }
         }
-
     }
 
     /// Write a u64 value to the memory write section, based on the provided address and width
