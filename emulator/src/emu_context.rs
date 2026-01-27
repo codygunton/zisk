@@ -41,9 +41,7 @@ impl EmuContext {
                 emulation_mode: EmulationMode::default(),
                 precompiled: PrecompiledInstContext::default(),
                 fcall: FcallInstContext::default(),
-                //--code smell--this eems like its part of the hot path and yet we are adding a new
-                //arg... is there another way?
-                pending_u256: zisk_core::PendingU256Op::default(),
+                pending_u256: None,
             },
             tracerv: Vec::new(),
             tracerv_step: 0,

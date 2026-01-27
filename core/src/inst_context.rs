@@ -133,8 +133,9 @@ pub struct InstContext {
     /// Fcall data
     pub fcall: FcallInstContext,
 
-    /// Pending U256 operation for bus emission (set during replay)
-    pub pending_u256: PendingU256Op,
+    /// Pending U256 operation for bus emission (set during replay).
+    /// None when U256 delegation is not enabled, saving 126 bytes per InstContext.
+    pub pending_u256: Option<PendingU256Op>,
 }
 
 /// RisK instruction context implementation
@@ -156,7 +157,16 @@ impl InstContext {
             emulation_mode: EmulationMode::default(),
             precompiled: PrecompiledInstContext::default(),
             fcall: FcallInstContext::default(),
-            pending_u256: PendingU256Op::default(),
+            pending_u256: None,
+        }
+    }
+
+    /// Enable U256 delegation by initializing pending_u256 and setting the mem flag.
+    /// Call this before execution when U256 operations are expected.
+    pub fn enable_u256(&mut self) {
+        self.mem.enable_u256_delegation();
+        if self.pending_u256.is_none() {
+            self.pending_u256 = Some(PendingU256Op::default());
         }
     }
 
