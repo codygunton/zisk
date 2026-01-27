@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! U256 Delegation State Machine
 //!
 //! Computes witness traces for U256 arithmetic operations.

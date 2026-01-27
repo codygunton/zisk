@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! Equality comparison and memory copy operations.
 
 /// Compare two 256-bit values for equality.

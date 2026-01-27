@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! Input data structure for U256 delegation operations.
 
 /// Control mask bits for U256 operations (matches Airbender protocol)

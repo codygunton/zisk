@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! 256-bit addition and subtraction operations.
 
 /// Compute 256-bit addition with optional carry input.

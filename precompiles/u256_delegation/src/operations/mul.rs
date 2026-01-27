@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! 256-bit multiplication operations.
 
 /// Compute 512-bit multiplication and return the low 256 bits.

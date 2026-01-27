@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! U256 Delegation Instance
 //!
 //! Manages the witness computation for a single U256 delegation air instance.

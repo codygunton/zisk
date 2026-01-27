@@ -1,4 +1,6 @@
-//--BIG WARNING HERE TOO and on every file in this new precompile
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+// The constraint logic should be formally verified before production use.
+
 //! U256 Delegation Precompile
 //!
 //! This precompile handles 256-bit arithmetic operations delegated via CSR 0x7ca.

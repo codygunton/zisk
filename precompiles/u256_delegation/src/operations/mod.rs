@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! U256 arithmetic operations for delegation precompile.
 //!
 //! These functions implement the core 256-bit arithmetic operations that are

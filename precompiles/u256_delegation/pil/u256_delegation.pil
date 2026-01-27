@@ -1,4 +1,6 @@
-//--PUT A HUGE WARNING HERE ABOUT HOW THIS WAS AI GENERATED AND WAS NOT REVIEWED
+// ⚠️  WARNING: This PIL was AI-generated and has NOT been formally verified.
+// The arithmetic constraints must be reviewed by a cryptographer before production use.
+
 require "std_lookup.pil";
 require "std_range_check.pil";
 require "operations.pil";

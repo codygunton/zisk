@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! U256 Delegation Planner
 //!
 //! Plans execution instances for U256 delegation operations based on

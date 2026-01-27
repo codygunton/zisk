@@ -1,3 +1,5 @@
+// ⚠️  WARNING: This module was AI-generated and has NOT undergone thorough human review.
+
 //! U256 Delegation Counter and Input Generator
 //!
 //! This module provides a bus device that:
