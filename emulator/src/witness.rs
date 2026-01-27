@@ -1,8 +1,15 @@
 //! Witness capture for oracle reads during emulation.
 //!
-//! This module provides utilities to capture oracle reads during Zisk emulation,
-//! producing a witness file that can be replayed later.
-//--say more about why
+//! This module captures oracle reads into `Vec<u32>` while forwarding to the
+//! underlying oracle. This enables:
+//!
+//! - **Deterministic replay**: Re-execute without live oracle access
+//! - **Parallel proving**: Multiple provers can replay the same witness
+//! - **Debugging**: Inspect exact oracle interactions
+//! - **Testing**: Consistent execution across environments
+//!
+//! The capture is transparent—the underlying oracle still processes queries normally.
+//! Use `WitnessCapture` to wrap any oracle and record its interactions.
 
 use std::sync::{Arc, Mutex};
 use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};

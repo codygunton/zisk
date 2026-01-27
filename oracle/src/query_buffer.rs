@@ -1,4 +1,17 @@
-//! Query buffer for accumulating CSR writes.
+//! Query buffer for accumulating CSR writes into complete oracle queries.
+//!
+//! ## Why Buffering Is Needed
+//!
+//! The oracle protocol is **multi-step**: a single query requires multiple CSR writes
+//! (query_type, then input_length, then input_data[0..n]). Without buffering, each
+//! CSR write would be a standalone operation with no context. The buffer accumulates
+//! writes until a complete query is formed, then hands off the assembled query.
+//!
+//! ## 32-bit to 64-bit Bridging
+//!
+//! The CSR interface uses 32-bit writes (u32), but 64-bit guests expect usize values.
+//! QueryBuffer packs pairs of u32 values into u64 usize values as they arrive.
+//! (note: we could consider a deeper refactor to produce 64-bit oracle i/o.)
 
 /// Buffers incoming query words until the query is complete.
 ///
@@ -6,7 +19,6 @@
 /// 1. First write: query type (u32)
 /// 2. Second write: input length in u32 words
 /// 3. Subsequent writes: input data (u32 words packed into usize)
-//--explain why this is needed
 pub struct QueryBuffer {
     query_type: u32,
     expected_len: Option<usize>,

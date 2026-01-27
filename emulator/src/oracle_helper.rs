@@ -1,19 +1,24 @@
-//! Oracle integration helpers for the emulator.
-//--more descriptive leading comment needed
+//! Oracle integration helpers for the ZisK emulator.
+//!
+//! This module provides callback creation functions for different oracle types:
+//!
+//! - **`ZiskOracle`**: Live oracle for real-time query processing
+//! - **`ReplayOracle`**: Pre-recorded u32 witness data replay (simple sequential)
+//! - **`Replay64Oracle`**: Combines u32 pairs into u64 for 64-bit RISC-V guests
+//! - **`ProtocolAwareReplayOracle`**: Full CSR 0x7c0 protocol simulation with state tracking
+//!
+//! Each function wraps the oracle in `Arc<Mutex<>>` and returns an `OracleCallback`
+//! that can be set on the emulator's memory context via `Mem::set_oracle_callback()`.
 
 use std::sync::{Arc, Mutex};
 use zisk_core::{OracleCallback, OracleOp, ZiskMemoryReader};
 use zisk_oracle::processors::{ProtocolAwareReplayOracle, Replay64Oracle, ReplayOracle};
 use zisk_oracle::ZiskOracle;
 
-// Q?: This oracle callback stuff is extermely spaghetti. Is there a light-touch refactor that
-// would improve on this?
-// A: The complexity comes from needing to support multiple oracle types (ZiskOracle, ReplayOracle,
-// Replay64Oracle, ProtocolAwareReplayOracle) through a single OracleCallback type. A light-touch
-// improvement: define an `Oracle` trait with `read(&self) -> u64` and `write(&mut self, u64)`,
-// then have Mem hold `Option<Box<dyn Oracle>>` instead of the callback. This removes Arc<Mutex>
-// wrapping from user code and makes the interface cleaner.
-//--does this still sound like a good idea?
+// Future enhancement: Replace callback-based interface with trait-based Oracle approach.
+// Define `Oracle` trait with `read(&self) -> u64` and `write(&mut self, u64)`, then have
+// Mem hold `Option<Box<dyn Oracle>>`. This would remove Arc<Mutex> wrapping from user code.
+// Tracked as future work due to API impact on zisk_core.
 /// Creates an `OracleCallback` that wraps a `ZiskOracle`.
 ///
 /// The callback routes reads and writes to the appropriate oracle methods.

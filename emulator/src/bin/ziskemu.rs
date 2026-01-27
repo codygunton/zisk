@@ -15,14 +15,19 @@ fn main() {
         println!("ziskemu converts an ELF RISCV file into a ZISK rom or loads a ZISK rom file, emulates it with the provided input, and copies the output to console or a file");
     }
 
-    // Create oracle callback if zksyncos_oracle flag is set
-    // Uses ReplayOracle to replay u32 witness data directly.
-    //--say more about what this replay model is and why it to used nz in the new guest program
-    //well that reviewers of this pull requests can better understand what's going on
-    //--let's also get rid of this logging here and any other auxiliary logging of this or for
-    //clarity of the pr  the but we can keep conditional logging  especially uart logging
-    // The witness file from zksync-os contains u32 values in big-endian format.
-    // The 64-bit guest handles combining u32 pairs into u64 via io_oracle.
+    // Create oracle callback if zksyncos_oracle flag is set.
+    //
+    // Why replay mode? ZKsyncOS queries external oracles (CSR 0x7c0) for Ethereum
+    // state data (block headers, transactions, MPT proofs). These queries are
+    // non-deterministic, but ZK proofs require deterministic execution. The solution:
+    //
+    // 1. Forward pass: Execute with live oracle, capture responses as Vec<u32> witness
+    // 2. Replay pass: Re-execute using captured witness data (no network needed)
+    //
+    // This is required by ZKsyncOS's architecture regardless of host VM (ZisK, Airbender,
+    // QEMU) - any program that queries external oracles needs replay for proving.
+    //
+    // Note: The 64-bit guest reads u32 pairs and combines them into u64 via io_oracle.
     let oracle_callback = if options.zksyncos_oracle {
         if let Some(ref inputs_path) = options.inputs {
             if options.verbose {

@@ -129,16 +129,15 @@ impl ZiskProve {
         }
 
         let stdin = self.create_stdin()?;
-        //--the this is a bit ambiguous looking how can we make it more readable?  the what kind of
-        //oracle is it maybe we should give it a more description i mean descriptive name
-        let oracle_bytes = self.load_oracle_bytes()?;
+        // Load zksync-os witness data for deterministic replay (creates Replay64Oracle internally)
+        let zksyncos_witness_bytes = self.load_oracle_bytes()?;
 
         let emulator = if cfg!(target_os = "macos") { true } else { self.emulator };
 
         let (result, world_rank) = if emulator {
-            self.run_emu(stdin, gpu_params, oracle_bytes)?
+            self.run_emu(stdin, gpu_params, zksyncos_witness_bytes)?
         } else {
-            self.run_asm(stdin, gpu_params, oracle_bytes)?
+            self.run_asm(stdin, gpu_params, zksyncos_witness_bytes)?
         };
 
         if world_rank == 0 {

@@ -1,5 +1,19 @@
-//! Block metadata query processor.
-//--expand significantly on this comment
+//! Block metadata query processor for BLOCK_METADATA_QUERY_ID (0x40070000).
+//!
+//! Handles guest queries for block-level metadata during ZKsyncOS execution.
+//! Returns data in zk_ee's UsizeSerializable format:
+//!
+//! - `eip1559_basefee`: U256 (4 usize)
+//! - `pubdata_price`: U256 (4 usize)
+//! - `native_price`: U256 (4 usize)
+//! - `block_number`, `timestamp`, `chain_id`: 1 usize each
+//! - `gas_limit`, `pubdata_limit`: 1 usize each
+//! - `coinbase`: B160 (3 usize)
+//! - `block_hashes`: 256 × U256 (1024 usize)
+//! - `mix_hash`: U256 (4 usize)
+//!
+//! Total: ~1048 usize values per query. Used by ZKsyncOS for fee calculations
+//! and block context information.
 
 use crate::query_ids::BLOCK_METADATA_QUERY_ID;
 use crate::{OracleError, OracleProcessor};

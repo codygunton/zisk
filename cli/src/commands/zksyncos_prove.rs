@@ -27,8 +27,15 @@ use zisk_sdk::{ProverClient, ZiskProveResult};
         .multiple(false)
         .required(false)
 ))]
-//--which of these arguments  our new for this command relative to the existing prove command
-//answer the same question for the run command as well
+/// Prove zksync-os execution with witness data.
+///
+/// ## Differences from `ZiskProve`:
+/// - `witness` is **required** (not optional) - the witness file IS the input
+/// - No separate `input` parameter needed
+/// - Automatically converts hex-encoded witness to byte format
+///
+/// ## Witness Format
+/// Expects hex-encoded `Vec<u32>` from eth_runner's witness generation.
 pub struct ZiskZkSyncOsProve {
     /// Path to zksync-os ELF file (e.g., evm_replay.elf)
     #[clap(short = 'e', long)]

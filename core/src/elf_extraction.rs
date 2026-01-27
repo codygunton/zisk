@@ -77,9 +77,10 @@ pub fn collect_elf_payload_from_bytes(file_data: &[u8]) -> Result<ElfPayload, Bo
                 continue;
             }
 
-            // Handle different section types
-            //--added clarifying comment here for for request reviewers about why we have to add
-            //this boolean to i support the new guest program
+            // Handle different section types.
+            // The is_exec flag supports the C extension (compressed instructions) in ZisK.
+            // ZKsyncOS on ZisK (RV64IMAFDC) uses 2-byte aligned code sections for compressed
+            // instructions, while data sections remain 4-byte aligned.
             let is_exec = (sh.sh_flags & SHF_EXECINSTR as u64) != 0;
 
             let data = if sh.sh_type == SHT_PROGBITS {

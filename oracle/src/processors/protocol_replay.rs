@@ -1,6 +1,17 @@
 //! Protocol-aware replay processor for pre-recorded oracle responses.
-//--do we need both the ReplayOracle class and this one? if so update the commen here better to
-//explain why we need both.
+//!
+//! ## Why Two Replay Implementations?
+//!
+//! - **`ReplayOracle`**: Simple sequential u32 playback. Used when protocol state
+//!   is managed elsewhere or for basic witness replay without length injection.
+//!
+//! - **`ProtocolAwareReplayOracle`**: Full CSR 0x7c0 state machine implementation.
+//!   Tracks query types, injects response lengths on appropriate reads, and handles
+//!   variable-size queries. Required for replaying full oracle interactions where
+//!   the guest expects proper protocol framing.
+//!
+//! Use ProtocolAwareReplayOracle for complete oracle simulation; use ReplayOracle
+//! when you only need raw value playback.
 //!
 //! Unlike `ReplayOracle` which simply returns sequential u32 values, this processor
 //! understands the CSR 0x7c0 oracle protocol and injects response lengths appropriately.
