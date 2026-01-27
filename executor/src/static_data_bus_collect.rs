@@ -71,11 +71,7 @@ pub struct StaticDataBusCollect<D> {
     /// ROM collector
     pub rom_collector: Vec<(usize, RomCollector)>,
 
-    /// U256 delegation collectors for proving 256-bit arithmetic operations.
-    ///
-    /// These collectors capture witness data for operations delegated from ZKsyncOS
-    /// via CSR 0x7ca (U256_DELEGATION_CSR). Each collector gathers evidence for
-    /// ADD, SUB, MUL, and EQ operations to be verified in the u256_delegation PIL circuit.
+    /// U256 delegation collectors
     pub u256_delegation_collector: Vec<(usize, U256DelegationCollector)>,
 
     /// Queue of pending data transfers to be processed.

@@ -883,14 +883,26 @@ impl Riscv2ZiskContext<'_> {
     pub fn jalr(&mut self, i: &RiscvInstruction, inst_size: u64) {
         assert!(inst_size == 4 || inst_size == 2);
         let mut rom_address = i.rom_address;
-        //--let's try reverting this leaving a single line comments saying nb  the this mask is the
-        //and then i think it's more restrictive than the spec requires the check me on that
-        // Per RISC-V spec: JALR clears only bit 0 of the target address (0xfffffffffffffffe),
-        // not bits 0 and 1. This allows jumping to 2-byte aligned targets when the C extension
-        // is enabled.
-        // WORKTODO: AI thought this was necessary to execute zksync-os but i don't recall what it
-        // supposedly unblocked...
-        const JALR_MASK: u64 = 0xfffffffffffffffe; // Clear only bit 0
+        // JALR target address mask per RISC-V ISA spec Section 2.5.
+        // Must clear only bit 0 (0xfffffffffffffffe) for 2-byte alignment.
+        //
+        // BUG: Using 0xfffffffffffffffc (4-byte alignment) breaks zksync-os at _start.
+        // The startup code (zksync-airbender/riscv_common/src/asm/start64.s) is:
+        //   _start:
+        //       la ra, _abs_start    # auipc + addi (8 bytes)
+        //       jr ra                # c.jr ra (2 bytes, compressed)
+        //   _abs_start:              # offset 10 = 0x8000000a
+        //
+        // The assembler uses compressed `c.jr` (2 bytes), placing _abs_start at
+        // 0x8000000a - valid for C extension but not 4-byte aligned.
+        //
+        // With mask 0xfc: 0x8000000a & 0xfc = 0x80000008 (jumps back to `jr ra`!)
+        // With mask 0xfe: 0x8000000a & 0xfe = 0x8000000a (correct target)
+        //
+        // The wrong mask causes an infinite self-loop at the first instruction,
+        // terminating after 16k steps instead of 1.6B.
+        const JALR_MASK: u64 = 0xfffffffffffffffe;
+
         if (i.imm % 4) == 0 {
             let mut zib = ZiskInstBuilder::new_from_riscv(rom_address, i.inst.clone());
             zib.src_a("imm", JALR_MASK, false);
