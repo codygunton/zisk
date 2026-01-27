@@ -85,13 +85,10 @@ if [[ -f "$BLOCK_DIR/witness.json" ]]; then
         -- single-eth-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-execute.log 2>&1
 elif [[ -f "$BLOCK_DIR/prestatetrace.json" ]]; then
     echo "Using single-run (flat storage model with prestatetrace.json)" >> /tmp/airbender-execute.log
-    if [[ "${SKIP_SIMULATION:-0}" == "1" ]]; then
-        SKIP_SIM_FLAG="--only-forward"
-    fi
     # cycle_marker enables cycle count output from the simulator
     RUSTFLAGS="-Awarnings" RUST_LOG=eth_runner=info,rig=info cargo run --release \
         --features "rig/unlimited_native,cycle_marker" \
-        -- single-run --block-dir "$BLOCK_DIR" $SKIP_SIM_FLAG >> /tmp/airbender-execute.log 2>&1
+        -- single-run --block-dir "$BLOCK_DIR" >> /tmp/airbender-execute.log 2>&1
 else
     echo "ERROR: Block directory doesn't have required files (witness.json or prestatetrace.json)" >> /tmp/airbender-execute.log
     exit 1
