@@ -82,9 +82,9 @@ fi
 
 # Check if witness file exists - generate if needed
 if [[ ! -f "$WITNESS_FILE" ]]; then
-    echo "Witness file not found. Running bench-zisk-cycles.sh to generate it..."
+    echo "Witness file not found. Running execute-zisk.sh to generate it..."
     echo ""
-    ./bench-zisk-cycles.sh "$BLOCK_NUMBER"
+    SETUP=0 ./execute-zisk.sh "$BLOCK_NUMBER"
     echo ""
     if [[ ! -f "$WITNESS_FILE" ]]; then
         echo "ERROR: Witness file still not found after running benchmark"
