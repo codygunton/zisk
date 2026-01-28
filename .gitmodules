@@ -1,7 +1,3 @@
-[submodule "zksync-airbender"]
-	path = zksync-airbender
-	url = https://github.com/codygunton/zksync-airbender.git
-	branch = zisk-squash
 [submodule "zksync-os"]
 	path = zksync-os
 	url = https://github.com/codygunton/zksync-os.git
