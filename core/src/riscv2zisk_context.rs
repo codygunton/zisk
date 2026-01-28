@@ -894,13 +894,18 @@ impl Riscv2ZiskContext<'_> {
         //   _abs_start:              # offset 10 = 0x8000000a
         //
         // The assembler uses compressed `c.jr` (2 bytes), placing _abs_start at
-        // 0x8000000a - valid for C extension but not 4-byte aligned.
+        // 0x8000000a - valid for C extension but not 4-byte aligned. We could change the start
+        // file but we leave as-is to document the issue.
         //
         // With mask 0xfc: 0x8000000a & 0xfc = 0x80000008 (jumps back to `jr ra`!)
         // With mask 0xfe: 0x8000000a & 0xfe = 0x8000000a (correct target)
         //
         // The wrong mask causes an infinite self-loop at the first instruction,
         // terminating after 16k steps instead of 1.6B.
+        //
+        // Note that this change fixes the misalign2-jalr-01.S test, which is part of the privilege
+        // architecture test suite but which seeems to test requirements of other parts of the
+        // spec.
         const JALR_MASK: u64 = 0xfffffffffffffffe;
 
         if (i.imm % 4) == 0 {
