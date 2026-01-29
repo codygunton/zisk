@@ -23,6 +23,62 @@ To start using ZisK, follow the [Quickstart](https://0xpolygonhermez.github.io/z
 
 📚 Complete Documentation: [ZisK Docs](https://0xpolygonhermez.github.io/zisk/)
 
+## Docker-based Proving (drun)
+
+The `drun` script provides a Docker-based workflow for executing and proving Ethereum blocks with ZisK. This is useful for standalone proving without a full local development setup.
+
+### Prerequisites
+
+- Docker
+- NVIDIA Container Toolkit (for GPU proving)
+
+### Commands
+
+```bash
+# Build the Docker image (clones from remote, includes proving key generation)
+./drun build
+
+# Execute an Ethereum block with ZisK emulator
+./drun execute
+
+# Execute with Airbender instead
+./drun execute -a
+
+# Run GPU proving (requires NVIDIA GPU)
+./drun prove
+
+# Interactive shell for debugging
+./drun shell
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BLOCK` | `24198369` | Block number to execute/prove |
+| `VERBOSE` | `0` | Enable verbose output |
+| `REPO_URL` | `https://github.com/codygunton/zisk` | Git repository URL for build |
+| `BRANCH` | `zksyncos` | Git branch to clone |
+
+### Examples
+
+```bash
+# Execute a specific block
+BLOCK=22244135 ./drun execute
+
+# Prove with verbose output
+BLOCK=24198369 VERBOSE=1 ./drun prove
+
+# Build from a different branch
+BRANCH=main ./drun build
+```
+
+### Notes
+
+- The proving key is built into the Docker image during `./drun build`
+- To override the built-in proving key, place your key in `./provingKey/` (it will be mounted read-only)
+- GPU proving requires the NVIDIA Container Toolkit to be installed and configured
+
 ## License
 
 All crates in this monorepo are licensed under one of the following options:
