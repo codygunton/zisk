@@ -24,7 +24,8 @@ show_help() {
     echo "Requirements:"
     echo "  - Docker"
     echo "  - NVIDIA Container Toolkit (for 'prove' command)"
-    echo "  - ./provingKey directory (for 'prove' command)"
+    echo ""
+    echo "Note: Proving key is built into the image. Mount ./provingKey to override."
 }
 
 build_image() {
@@ -70,19 +71,17 @@ run_container() {
         DOCKER_ARGS+=(-t)
     fi
 
-    # Add GPU support and proving key mount for prove command
+    # Add GPU support for prove command
     if [ "$CMD" = "prove" ]; then
         if ! command -v nvidia-smi &> /dev/null; then
             echo "Error: nvidia-smi not found. GPU proving requires NVIDIA drivers."
             exit 1
         fi
-        if [ ! -d "$SCRIPT_DIR/provingKey" ]; then
-            echo "Error: ./provingKey directory not found. Required for proving."
-            echo "Place your proving key files in: $SCRIPT_DIR/provingKey/"
-            exit 1
-        fi
         DOCKER_ARGS+=(--gpus all)
-        DOCKER_ARGS+=(-v "$SCRIPT_DIR/provingKey:/workspace/provingKey:ro")
+        # Optionally mount local proving key to override the built-in one
+        if [ -d "$SCRIPT_DIR/provingKey" ]; then
+            DOCKER_ARGS+=(-v "$SCRIPT_DIR/provingKey:/workspace/provingKey:ro")
+        fi
     fi
 
     # Pass through environment variables

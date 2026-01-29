@@ -19,11 +19,10 @@ case "$1" in
         ;;
     prove)
         shift
-        # Check for proving key
-        if [ ! -d "/workspace/provingKey" ]; then
-            echo "Error: provingKey directory not mounted."
-            echo "Mount it with: -v /path/to/provingKey:/workspace/provingKey:ro"
-            exit 1
+        # Run check-setup if constant tree files don't exist (requires GPU)
+        if [ ! -f "./provingKey/zisk/Main/Main.consttree" ]; then
+            echo "Generating constant tree files (first run only)..."
+            ./target/release/cargo-zisk check-setup --proving-key ./provingKey
         fi
         exec ./prove-block-zisk.sh "$@"
         ;;
@@ -38,7 +37,7 @@ case "$1" in
         echo "Commands:"
         echo "  execute            Execute Ethereum block with ZisK emulator"
         echo "  execute -a         Execute Ethereum block with Airbender"
-        echo "  prove              Run GPU proving (requires mounted provingKey)"
+        echo "  prove              Run GPU proving (proving key built-in)"
         echo "  shell              Interactive shell in container"
         echo ""
         echo "Environment Variables:"
