@@ -195,6 +195,9 @@ check_proving_success() {
     return 1
 }
 
+# Disable core dumps - the prover segfaults during cleanup and we don't need 200MB+ dumps
+ulimit -c 0
+
 # Run prover with appropriate output handling
 if [[ "${VERBOSE:-1}" == "0" ]]; then
     # Quiet mode: suppress all output, but capture to temp file to check success
