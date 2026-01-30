@@ -28,11 +28,13 @@ echo ""
 > /tmp/airbender-execute.log
 
 # Build the Airbender binary (output to log)
-# Enable print_debug_info to see UART output from the guest
+# Note: print_debug_info removed to avoid UART overhead in cycle counts
+# Touch main.rs to ensure rebuild when features change (cargo may not detect feature changes reliably)
 echo "Building Airbender binary..."
 {
     cd "$ZKSYNCOS_DIR/zksync_os"
-    FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,print_debug_info,global-alloc,pectra" ./build.sh --machine airbender
+    touch src/main.rs
+    FEATURES="proving,unlimited_native,disable_system_contracts,prevrandao,evm_refunds,global-alloc,pectra" ./build.sh --machine airbender
     cd "$REPO_ROOT"
 } >> /tmp/airbender-execute.log 2>&1
 

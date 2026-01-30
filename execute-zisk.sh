@@ -71,5 +71,5 @@ echo ""
 echo "Log: /tmp/zisk-execute.log"
 echo ""
 
-# Extract key metrics from log
-grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*G2 deserialization|\[GUEST\].*Withdrawals root|\[GUEST\].*Finished processing|\[GUEST\].*Using ZisK Keccak|All good)" /tmp/zisk-execute.log || true
+# Extract key metrics from log (matching airbender output format)
+grep -E "(Running block:|Block gas used:|process_rom\(\) steps|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\].*(Using|Withdrawals root|Finished processing)|All good|panicked|GasMismatch)" /tmp/zisk-execute.log || true

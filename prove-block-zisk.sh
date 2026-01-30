@@ -62,9 +62,12 @@ echo ""
 
 # Build ZKsyncOS for ZisK (incremental)
 # Features must match setup.sh for reproducibility
-ZKSYNCOS_FEATURES="proving,print_debug_info,delegation,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak"
+# Note: print_debug_info removed to avoid UART overhead in cycle counts
+ZKSYNCOS_FEATURES="proving,delegation,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak"
 if [[ "$SKIP_BUILD" == "false" ]]; then
     echo "Building ZKsyncOS for ZisK (incremental)..."
+    # Touch main.rs to ensure rebuild when features change (cargo may not detect feature changes reliably)
+    touch "$ZKSYNCOS_DIR/zksync_os/src/main.rs"
     if ! (cd "$ZKSYNCOS_DIR/zksync_os" && FEATURES="$ZKSYNCOS_FEATURES" ./build.sh --machine zisk) 2>&1 | tee /tmp/zksyncos-build.log | tail -10; then
         echo "ERROR: Failed to build ZKsyncOS"
         echo "See /tmp/zksyncos-build.log for details"

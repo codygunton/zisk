@@ -72,11 +72,13 @@ echo "=== Building ziskemu, cargo-zisk, and ziskclib ==="
 cargo build -p ziskemu -p cargo-zisk -p ziskclib --release
 
 # Build zksync-os for ZisK
-# Enable print_debug_info to see UART output from the guest
+# Note: print_debug_info removed to avoid UART overhead in cycle counts
+# Touch main.rs to ensure rebuild when features change (cargo may not detect feature changes reliably)
 echo ""
 echo "=== Building zksync-os for Zisk ==="
 cd "$ZKSYNCOS_DIR/zksync_os"
-FEATURES="proving,print_debug_info,delegation,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak" ./build.sh --machine zisk
+touch src/main.rs
+FEATURES="proving,delegation,global-alloc,pectra,evm_refunds,unlimited_native,prevrandao,disable_system_contracts,zisk_keccak" ./build.sh --machine zisk
 cd "$REPO_ROOT"
 
 # ROM setup (skip if no proving key available)
