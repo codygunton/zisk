@@ -70,6 +70,8 @@ RUN cargo install cargo-binutils
 WORKDIR /workspace
 
 # Clone repository from remote
+# Use CACHEBUST to force fresh clone when rebuilding: --build-arg CACHEBUST=$(date +%s)
+ARG CACHEBUST=1
 ARG REPO_URL=https://github.com/codygunton/zisk
 ARG BRANCH=zksyncos
 RUN git clone --recursive --branch ${BRANCH} ${REPO_URL} . && \
