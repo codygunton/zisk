@@ -5,9 +5,9 @@ set -eo pipefail
 # Usage: ./prove-block-zisk.sh [BLOCK_NUMBER]
 #
 # Environment variables:
-#   VERBOSE=1    Show detailed logging - operation counts, trace fills (default)
+#   VERBOSE=0    Quiet mode - INFO only (default)
+#   VERBOSE=1    Show detailed logging - operation counts, trace fills
 #   VERBOSE=2    Show debug-level logging (even more detail)
-#   VERBOSE=0    Quiet mode - minimal output
 #   REBUILD=1    Do incremental builds (default)
 #   REBUILD=0    Skip all builds, just run the prover (for timing measurements)
 #   CLEAN_GPU=1  Force clean and rebuild GPU libraries (use after proving key regen)
@@ -31,14 +31,14 @@ set -eo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-# Set verbose flags based on VERBOSE env var (default: 1)
+# Set verbose flags based on VERBOSE env var (default: 0 = INFO only)
 VERBOSE_FLAGS=""
-if [[ "${VERBOSE:-1}" == "2" ]]; then
+if [[ "${VERBOSE:-0}" == "2" ]]; then
     VERBOSE_FLAGS="-vv"
-elif [[ "${VERBOSE:-1}" == "1" ]]; then
+elif [[ "${VERBOSE:-0}" == "1" ]]; then
     VERBOSE_FLAGS="-v"
 fi
-# VERBOSE=0 means no flags (quiet mode)
+# VERBOSE=0 (default) means no flags = INFO level only
 
 # Check if we should skip builds (default: 1 = do builds)
 SKIP_BUILD=false
@@ -198,43 +198,28 @@ check_proving_success() {
 # Disable core dumps - the prover segfaults during cleanup and we don't need 200MB+ dumps
 ulimit -c 0
 
-# Run prover with appropriate output handling
-if [[ "${VERBOSE:-1}" == "0" ]]; then
-    # Quiet mode: suppress all output, but capture to temp file to check success
-    TEMP_LOG=$(mktemp)
-    echo "Running ZisK GPU prover in quiet mode..."
-    $PROVER_CMD > "$TEMP_LOG" 2>&1 || true
-    if check_proving_success "$TEMP_LOG"; then
-        echo "=== Proving SUCCEEDED ==="
-    else
-        echo "=== Proving FAILED ==="
-        echo "Re-run with VERBOSE=1 to see logs"
-    fi
-    rm -f "$TEMP_LOG"
-else
-    # Normal/verbose mode: log to file
-    echo "Running ZisK GPU prover (output in $LOG_FILE)..."
-    echo ""
-    $PROVER_CMD > "$LOG_FILE" 2>&1 || true
+# Run prover (output logged to file, verbosity controlled by VERBOSE_FLAGS)
+echo "Running ZisK GPU prover (output in $LOG_FILE)..."
+echo ""
+$PROVER_CMD > "$LOG_FILE" 2>&1 || true
 
-    if check_proving_success "$LOG_FILE"; then
-        echo "=== Proving SUCCEEDED ==="
-        echo ""
-        echo "Summary (last 20 lines of log):"
-        echo "----------------------------------------"
-        tail -20 "$LOG_FILE"
-        echo "----------------------------------------"
-        echo ""
-        echo "Output: $OUTPUT_DIR/"
-        ls -la "$OUTPUT_DIR/" 2>/dev/null || true
-    else
-        echo "=== Proving FAILED ==="
-        echo ""
-        echo "Last 50 lines of log:"
-        echo "----------------------------------------"
-        tail -50 "$LOG_FILE"
-        echo "----------------------------------------"
-    fi
+if check_proving_success "$LOG_FILE"; then
+    echo "=== Proving SUCCEEDED ==="
     echo ""
-    echo "Full log: $LOG_FILE"
+    echo "Summary (last 20 lines of log):"
+    echo "----------------------------------------"
+    tail -20 "$LOG_FILE"
+    echo "----------------------------------------"
+    echo ""
+    echo "Output: $OUTPUT_DIR/"
+    ls -la "$OUTPUT_DIR/" 2>/dev/null || true
+else
+    echo "=== Proving FAILED ==="
+    echo ""
+    echo "Last 50 lines of log:"
+    echo "----------------------------------------"
+    tail -50 "$LOG_FILE"
+    echo "----------------------------------------"
 fi
+echo ""
+echo "Full log: $LOG_FILE"

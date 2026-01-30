@@ -45,11 +45,6 @@ impl Replay64Oracle {
         // Store u32 values as u64 (zero-extended)
         let data: Vec<u64> = u32_values.iter().map(|&v| v as u64).collect();
 
-        eprintln!(
-            "[REPLAY64] Loaded {} u32 values for oracle replay",
-            u32_values.len()
-        );
-
         Self {
             data,
             position: AtomicUsize::new(0),
@@ -60,14 +55,8 @@ impl Replay64Oracle {
     pub fn read(&self) -> u64 {
         let pos = self.position.fetch_add(1, Ordering::SeqCst);
         if pos < self.data.len() {
-            let value = self.data[pos];
-            // Log first 50 reads and periodic reads for debugging
-            if pos < 50 || pos % 100 == 0 {
-                eprintln!("[REPLAY64] read[{}] = 0x{:016x} ({})", pos, value, value);
-            }
-            value
+            self.data[pos]
         } else {
-            eprintln!("[REPLAY64] read[{}] = exhausted (total={})", pos, self.data.len());
             0
         }
     }
@@ -99,12 +88,6 @@ impl Replay64Oracle {
     }
 }
 
-impl Drop for Replay64Oracle {
-    fn drop(&mut self) {
-        let pos = self.position.load(Ordering::SeqCst);
-        eprintln!("[REPLAY64] Oracle dropped at read position {} of {} total values", pos, self.data.len());
-    }
-}
 
 /// A replay oracle that returns pre-recorded u32 values sequentially.
 ///
@@ -183,17 +166,6 @@ impl ReplayOracle {
             })
             .collect();
 
-        eprintln!(
-            "[REPLAY] Loaded {} u32 values from hex text ({} chars)",
-            data.len(),
-            hex_text.len()
-        );
-
-        // Log first few values for debugging
-        for (i, val) in data.iter().take(10).enumerate() {
-            eprintln!("[REPLAY] hex[{}] = 0x{:08x} ({})", i, val, val);
-        }
-
         Self::new(data)
     }
 
@@ -246,15 +218,8 @@ impl ReplayOracle {
         let pos = self.position.fetch_add(1, Ordering::SeqCst);
         LAST_READ_POS.store(pos, Ordering::SeqCst);
         if pos < self.data.len() {
-            let value = self.data[pos];
-            // Log first 20 reads, then every 10000, and around BLOCK_METADATA boundary
-            if pos < 20 || pos == 2096 || pos == 2097 || (pos > 0 && pos % 10000 == 0) {
-                eprintln!("[REPLAY] read[{}] = 0x{:08x} ({})", pos, value, value);
-            }
-            value
+            self.data[pos]
         } else {
-            eprintln!("[REPLAY] read[{}] = exhausted (returning 0)", pos);
-            // All data consumed - return 0
             0
         }
     }

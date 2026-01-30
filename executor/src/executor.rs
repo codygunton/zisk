@@ -565,10 +565,6 @@ impl<F: PrimeField64> ZiskExecutor<F> {
 
         // Get oracle bytes for per-thread oracle instantiation
         let oracle_bytes = self.oracle_bytes.lock().expect("oracle_bytes lock").clone();
-        eprintln!("[EXECUTOR] oracle_bytes is_some: {}", oracle_bytes.is_some());
-        if let Some(ref bytes) = oracle_bytes {
-            eprintln!("[EXECUTOR] oracle_bytes len: {}", bytes.len());
-        }
 
         let min_traces = ZiskEmulator::compute_minimal_traces_with_oracle(
             &self.zisk_rom,

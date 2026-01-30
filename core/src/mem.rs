@@ -408,16 +408,7 @@ impl Mem {
         regs: &mut [u64; 32],
     ) -> ([u32; 8], [u32; 8], [u32; 8], bool) {
         use crate::u256::{execute_u256_op, u256_from_limbs, u256_to_limbs};
-        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-        // Track U256 operations globally using atomics
-        static U256_OP_COUNT: AtomicU64 = AtomicU64::new(0);
-        static U256_FIRST_CALL: AtomicBool = AtomicBool::new(true);
-
-        if U256_FIRST_CALL.swap(false, Ordering::Relaxed) {
-            eprintln!("[U256-DELEGATION] First U256 CSR 0x7ca delegation call - U256 delegation is ACTIVE");
-        }
-        let op_count = U256_OP_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
 
         // Read operand A using volatile pattern (8 x u32 = 32 bytes)
         let mut a_limbs = [0u32; 8];
@@ -445,25 +436,10 @@ impl Mem {
         let b = u256_from_limbs(&b_limbs);
         let control = (x12 & 0xFF) as u8;
 
-        // Debug - log periodically to track progress
-        if op_count <= 5 || op_count % 10000 == 0 {
-            eprintln!(
-                "[U256] #{} ctrl={:#04x} x10={:#x} x11={:#x} a={:?} b={:?}",
-                op_count, control, x10, x11, a_limbs, b_limbs
-            );
-        }
-
         let (result, overflow) = execute_u256_op(a, b, control);
 
         // Write result back to memory at x10 using volatile pattern
         let result_limbs = u256_to_limbs(result);
-
-        if op_count <= 5 || op_count % 10000 == 0 {
-            eprintln!(
-                "[U256] #{} result={:?} overflow={} -> writing to {:#x}",
-                op_count, result_limbs, overflow, x10
-            );
-        }
 
         for i in 0..8 {
             let addr = x10 + (i * 4) as u64;
@@ -478,13 +454,8 @@ impl Mem {
         (a_limbs, b_limbs, result_limbs, overflow)
     }
 
-    /// Print a summary of U256 delegation usage.
-    /// Call this at the end of execution to see if U256 delegation was used.
+    /// Print a summary of U256 delegation usage (no-op, debug prints removed).
     pub fn print_u256_summary() {
-        // Access the static from handle_u256_delegation
-        // Note: This is a bit hacky but works for debugging
-        eprintln!("[U256-DELEGATION] Summary: Check above for 'U256 delegation is ACTIVE' message");
-        eprintln!("[U256-DELEGATION] If no such message appeared, U256 delegation was NOT used by the guest");
     }
 
     /// Set the UART output mode.
