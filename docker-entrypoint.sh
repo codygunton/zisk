@@ -29,7 +29,7 @@ case "$1" in
     shell)
         exec /bin/bash
         ;;
-    -h|--help|help|"")
+    -h | --help | help | "")
         echo "ZisK/ZKsyncOS Docker Container"
         echo ""
         echo "Usage: docker run [options] zisk-os <command>"

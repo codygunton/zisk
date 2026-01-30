@@ -27,7 +27,7 @@ RUST_STD_PATH="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/lib
 export LD_LIBRARY_PATH="$RUST_STD_PATH:/opt/intel/oneapi/compiler/2025.0/lib:${LD_LIBRARY_PATH:-}"
 export LIBRARY_PATH="/opt/intel/oneapi/compiler/2025.0/lib:${LIBRARY_PATH:-}"
 
-WORKSPACE_DIR="${HOME}/workspace"
+WORKSPACE_DIR="${WORKSPACE_DIR:-${HOME}/workspace}"
 PIL2_COMPILER="${WORKSPACE_DIR}/pil2-compiler"
 PIL2_PROOFMAN_JS="${WORKSPACE_DIR}/pil2-proofman-js"
 
@@ -104,12 +104,17 @@ rm -rf ./provingKey
 cp -R build/provingKey ./provingKey
 echo ""
 
-# Step 5: Generate constant tree files for GPU proving
-echo "=== Step 5/5: Generating constant tree files (for GPU proving) ==="
-echo "Building cargo-zisk with GPU support..."
-cargo build --release --features gpu -p cargo-zisk 2>&1 | tail -5
-echo "Running check-setup..."
-./target/release/cargo-zisk check-setup --proving-key ./provingKey
+# Step 5: Generate constant tree files for GPU proving (skip if SKIP_CHECK_SETUP=1)
+if [[ "${SKIP_CHECK_SETUP}" == "1" ]]; then
+    echo "=== Step 5/5: Skipping constant tree generation (SKIP_CHECK_SETUP=1) ==="
+    echo "Run 'cargo-zisk check-setup --proving-key ./provingKey' later when GPU is available"
+else
+    echo "=== Step 5/5: Generating constant tree files (for GPU proving) ==="
+    echo "Building cargo-zisk with GPU support..."
+    cargo build --release --features gpu -p cargo-zisk 2>&1 | tail -5
+    echo "Running check-setup..."
+    ./target/release/cargo-zisk check-setup --proving-key ./provingKey
+fi
 echo ""
 
 # Show the AIRs in the new proving key

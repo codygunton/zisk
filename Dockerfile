@@ -81,6 +81,9 @@ RUN cargo fetch
 # Build release binaries using setup script (without proving key)
 RUN ./setup.sh
 
+# Install ZisK Rust toolchain (required for cargo-zisk build commands)
+RUN ./target/release/cargo-zisk sdk install-toolchain
+
 # Install Node.js for pil2 toolchain
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
@@ -94,27 +97,9 @@ RUN git clone https://github.com/0xPolygonHermez/pil2-compiler.git /workspace/pi
 RUN cd /workspace/pil2-compiler && npm install && \
     cd /workspace/pil2-proofman-js && npm install
 
-# Generate proving key (requires ~170GB RAM)
-# Step 1: Generate fixed data
-RUN cargo run --release --bin keccakf_expr_generator && \
-    cargo run --release --bin arith_frops_fixed_gen && \
-    cargo run --release --bin binary_basic_frops_fixed_gen && \
-    cargo run --release --bin binary_extension_frops_fixed_gen
-
-# Step 2: Find pil2-proofman in cargo cache
-# Step 3: Compile PIL and generate proving key
-RUN mkdir -p tmp/fixed && \
-    PIL2_PROOFMAN=$(find /root/.cargo/git/checkouts/pil2-proofman-* -maxdepth 2 -name "pil2-components" -type d 2>/dev/null | head -1 | xargs dirname) && \
-    NODE_OPTIONS="--max-old-space-size=65536" node /workspace/pil2-compiler/src/pil.js pil/zisk.pil \
-        -I pil,"${PIL2_PROOFMAN}/pil2-components/lib/std/pil",state-machines,precompiles \
-        -o pil/zisk.pilout \
-        -u tmp/fixed \
-        -O fixed-to-file && \
-    node --max-old-space-size=163840 --stack-size=16384 /workspace/pil2-proofman-js/src/main_setup.js \
-        -a ./pil/zisk.pilout \
-        -b build \
-        -u tmp/fixed && \
-    cp -R build/provingKey ./provingKey
+# Generate proving key using the regenerate script
+# SKIP_CHECK_SETUP=1 because GPU is not available during Docker build (runs at container runtime)
+RUN WORKSPACE_DIR=/workspace SKIP_CHECK_SETUP=1 ./regenerate-proving-key.sh
 
 # Build cargo-zisk with GPU support (check-setup runs at container runtime since it needs GPU)
 RUN cargo build --release --features gpu -p cargo-zisk
