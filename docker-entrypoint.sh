@@ -10,21 +10,28 @@ fi
 case "$1" in
     execute)
         shift
+        # Skip setup since it was done during Docker build
+        export SETUP=0
+        # Pass BLOCK env var as argument if set
+        BLOCK_ARG="${BLOCK:-}"
         if [ "$1" = "-a" ] || [ "$1" = "--airbender" ]; then
             shift
-            exec ./execute-airbender.sh "$@"
+            exec ./execute-airbender.sh ${BLOCK_ARG:+"$BLOCK_ARG"} "$@"
         else
-            exec ./execute-zisk.sh "$@"
+            exec ./execute-zisk.sh ${BLOCK_ARG:+"$BLOCK_ARG"} "$@"
         fi
         ;;
     prove)
         shift
+        # Skip rebuild since it was done during Docker build
+        export REBUILD=0
         # Run check-setup if constant tree files don't exist (requires GPU)
-        if [ ! -f "./provingKey/zisk/Main/Main.consttree" ]; then
+        if [ ! -f "./provingKey/zisk/Zisk/airs/Main/air/Main.consttree" ]; then
             echo "Generating constant tree files (first run only)..."
             ./target/release/cargo-zisk check-setup --proving-key ./provingKey
         fi
-        exec ./prove-block-zisk.sh "$@"
+        # Pass BLOCK env var as argument if set
+        exec ./prove-block-zisk.sh ${BLOCK:+"$BLOCK"} "$@"
         ;;
     shell)
         exec /bin/bash
