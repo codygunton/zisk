@@ -99,5 +99,5 @@ echo ""
 echo "Log: /tmp/airbender-execute.log"
 echo ""
 
-# Extract key metrics from log
-grep -E "(Running block:|Block gas used:|Simulator.*executed|Native used|Effective cycles|net cycles|Total delegations|cycles to finish|Took.*cycles|Expected block hash:|Forward storage diff hash:|Proof output hash:|\[GUEST\]|GasMismatch|panicked|All good)" /tmp/airbender-execute.log || true
+# Extract key metrics from log (matching zisk output format)
+grep -E "(Running block:|Block gas used:|Expected block hash:|Took.*cycles to finish|\[GUEST\].*(Using|Withdrawals root|Finished processing)|Proof output hash:|All good|panicked|GasMismatch)" /tmp/airbender-execute.log || true

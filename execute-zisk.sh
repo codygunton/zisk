@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Execute Ethereum blocks using ZisK (RV64IM) emulator
+# Execute Ethereum blocks using ZisK (RV64IMAC) emulator
 #
 # Usage: ./execute-zisk.sh [BLOCK_NUMBER]
 #
@@ -20,7 +20,7 @@ ZKSYNCOS_DIR="$REPO_ROOT/zksync-os"
 ETH_RUNNER_DIR="$ZKSYNCOS_DIR/tests/instances/eth_runner"
 BLOCK_DIR="$ETH_RUNNER_DIR/blocks/$BLOCK_NUMBER"
 
-echo "=== Zisk (RV64IM) Cycle Benchmark ==="
+echo "=== Zisk (RV64IMAC) Cycle Benchmark ==="
 echo "Block: $BLOCK_NUMBER"
 echo ""
 
