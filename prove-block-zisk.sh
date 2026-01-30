@@ -185,22 +185,36 @@ if [[ -n "$VERBOSE_FLAGS" ]]; then
     PROVER_CMD="$PROVER_CMD $VERBOSE_FLAGS"
 fi
 
+# Helper to check if proving succeeded based on log content
+# The prover may segfault during cleanup but still complete successfully
+check_proving_success() {
+    local log_file="$1"
+    if grep -q "All proofs were successfully generated" "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
 # Run prover with appropriate output handling
 if [[ "${VERBOSE:-1}" == "0" ]]; then
-    # Quiet mode: suppress all output
+    # Quiet mode: suppress all output, but capture to temp file to check success
+    TEMP_LOG=$(mktemp)
     echo "Running ZisK GPU prover in quiet mode..."
-    if $PROVER_CMD > /dev/null 2>&1; then
+    $PROVER_CMD > "$TEMP_LOG" 2>&1 || true
+    if check_proving_success "$TEMP_LOG"; then
         echo "=== Proving SUCCEEDED ==="
     else
-        EXIT_CODE=$?
-        echo "=== Proving FAILED (exit code $EXIT_CODE) ==="
+        echo "=== Proving FAILED ==="
         echo "Re-run with VERBOSE=1 to see logs"
     fi
+    rm -f "$TEMP_LOG"
 else
     # Normal/verbose mode: log to file
     echo "Running ZisK GPU prover (output in $LOG_FILE)..."
     echo ""
-    if $PROVER_CMD > "$LOG_FILE" 2>&1; then
+    $PROVER_CMD > "$LOG_FILE" 2>&1 || true
+
+    if check_proving_success "$LOG_FILE"; then
         echo "=== Proving SUCCEEDED ==="
         echo ""
         echo "Summary (last 20 lines of log):"
@@ -211,8 +225,7 @@ else
         echo "Output: $OUTPUT_DIR/"
         ls -la "$OUTPUT_DIR/" 2>/dev/null || true
     else
-        EXIT_CODE=$?
-        echo "=== Proving FAILED (exit code $EXIT_CODE) ==="
+        echo "=== Proving FAILED ==="
         echo ""
         echo "Last 50 lines of log:"
         echo "----------------------------------------"
