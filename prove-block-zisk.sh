@@ -112,21 +112,24 @@ PROVER_BINARY="./target/release/cargo-zisk"
 WITNESS_LIB="./target/release/libzisk_witness.so"
 
 # Check if GPU libraries exist in pil2-proofman cache
-# If missing or CLEAN_GPU=1, clean and force rebuild
+# If missing or CLEAN_GPU=1, clean and force rebuild (but only if we're also rebuilding)
 PIL2_STARK_DIR=$(find ~/.cargo/git/checkouts/pil2-proofman-* -maxdepth 2 -name "pil2-stark" -type d 2>/dev/null | head -1)
 GPU_LIB_EXISTS=false
 if [[ -n "$PIL2_STARK_DIR" && -d "$PIL2_STARK_DIR/lib-gpu" ]]; then
     GPU_LIB_EXISTS=true
 fi
 
-if [[ "${CLEAN_GPU:-0}" == "1" ]] || [[ "$GPU_LIB_EXISTS" == "false" ]]; then
-    echo "Cleaning GPU libraries from pil2-proofman cache..."
-    rm -rf ~/.cargo/git/checkouts/pil2-proofman-*/*/pil2-stark/lib-gpu 2>/dev/null || true
-    rm -rf ~/.cargo/git/checkouts/pil2-proofman-*/*/pil2-stark/build-gpu 2>/dev/null || true
-    # Force rebuild of proofman-starks-lib-c
-    cargo clean -p proofman-starks-lib-c 2>/dev/null || true
-    echo "GPU libraries cleaned - will rebuild"
-    echo ""
+# Only clean GPU libs if we're going to rebuild them (SKIP_BUILD=false)
+if [[ "$SKIP_BUILD" == "false" ]]; then
+    if [[ "${CLEAN_GPU:-0}" == "1" ]] || [[ "$GPU_LIB_EXISTS" == "false" ]]; then
+        echo "Cleaning GPU libraries from pil2-proofman cache..."
+        rm -rf ~/.cargo/git/checkouts/pil2-proofman-*/*/pil2-stark/lib-gpu 2>/dev/null || true
+        rm -rf ~/.cargo/git/checkouts/pil2-proofman-*/*/pil2-stark/build-gpu 2>/dev/null || true
+        # Force rebuild of proofman-starks-lib-c
+        cargo clean -p proofman-starks-lib-c 2>/dev/null || true
+        echo "GPU libraries cleaned - will rebuild"
+        echo ""
+    fi
 fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then
