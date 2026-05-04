@@ -29,11 +29,13 @@ fields = { workspace = true }
 proofman = { workspace = true }
 proofman-common = { workspace = true }
 proofman-util = { workspace = true }
+pil2-stark-setup = { workspace = true }
 sysinfo = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+rayon = { workspace = true }
 
 clap = { workspace = true }
 dirs = "6"
