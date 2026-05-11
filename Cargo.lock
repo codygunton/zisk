@@ -1980,6 +1980,7 @@ dependencies = [
  "mem-common",
  "mem-planner-cpp",
  "named-sem",
+ "paste",
  "pil-std-lib",
  "precomp-arith-eq",
  "precomp-arith-eq-384",
@@ -7603,6 +7604,7 @@ dependencies = [
  "zisk-cluster-common",
  "zisk-common",
  "zisk-core",
+ "zisk-pil",
  "ziskemu",
 ]
 

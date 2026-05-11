@@ -7,7 +7,7 @@ use crate::{
 };
 use crate::{ensure_program_vk, get_rom_bin_path, BackendProverOpts};
 use asm_runner::HintsShmem;
-use executor::initialize_executor;
+use executor::ZiskExecutor;
 use precompiles_hints::HintsProcessor;
 use proofman::{
     AggProofs, AggProofsRegister, ProofMan, ProvePhase, ProvePhaseInputs, SnarkWrapper, WitnessInfo,
@@ -313,7 +313,7 @@ impl EmuCoreProver {
         }
 
         let executor =
-            initialize_executor(options.verbose_mode, shared_tables, false, &proofman.get_wcm())?;
+            ZiskExecutor::new(&proofman.get_wcm(), options.verbose_mode, shared_tables, false)?;
 
         executor.set_packed(options.packed);
 

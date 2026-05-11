@@ -30,6 +30,7 @@ rayon = { workspace = true }
 pil-std-lib = { workspace = true }
 precompiles-hints = { workspace = true }
 anyhow = { workspace = true }
+paste = { workspace = true }
 crossbeam = "0.8.4"
 
 precompiles-common = { workspace = true }
