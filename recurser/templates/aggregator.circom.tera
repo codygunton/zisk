@@ -50,26 +50,35 @@ template Main(nPublics, nPrivateInputs, nPrograms) {
     }
 
     // -- Membership check: is the proof's programVK in the registered list?
-    //    Per-program IsEqualVK feeds a running sum that's 0/1
-    //    (leaf/aggregated), assuming no duplicates.
+    //    Computed as `1 - ∏_k (1 - eq_X[k])` — equivalent to a sum of
+    //    indicators when programVKs[] has no duplicates, but expressed as
+    //    a product so circom's `{binary}` tag survives all the way to the
+    //    `MultiMux1` / `Mux1` selectors below (addition strips the tag,
+    //    multiplication preserves it). The "no duplicates" assumption is
+    //    a setup-time invariant — enforce it on the registry, not here.
+    //
+    //    We seed `noMatch[0]` from `(1 - eq[0])` rather than a literal `1`
+    //    so every assignment's RHS is a tagged-binary expression — circom
+    //    2.1 doesn't promote bare literals to the `{binary}` tag, and a
+    //    `noMatch[0] <== 1` init would drop the tag for the whole chain.
+    //    Assumes `nPrograms >= 1` (enforced at setup time by the CLI).
     signal {binary} eqA[nPrograms];
     signal {binary} eqB[nPrograms];
-    signal accA[nPrograms + 1];
-    signal accB[nPrograms + 1];
-    accA[0] <== 0;
-    accB[0] <== 0;
+    signal {binary} noMatchA[nPrograms];
+    signal {binary} noMatchB[nPrograms];
     for (var k = 0; k < nPrograms; k++) {
         eqA[k] <== IsEqualVK()(programVK_A, programVKs[k]);
         eqB[k] <== IsEqualVK()(programVK_B, programVKs[k]);
-        accA[k + 1] <== accA[k] + eqA[k];
-        accB[k + 1] <== accB[k] + eqB[k];
+    }
+    noMatchA[0] <== 1 - eqA[0];
+    noMatchB[0] <== 1 - eqB[0];
+    for (var k = 1; k < nPrograms; k++) {
+        noMatchA[k] <== noMatchA[k - 1] * (1 - eqA[k]);
+        noMatchB[k] <== noMatchB[k - 1] * (1 - eqB[k]);
     }
 
-    signal isRegisteredProgramA <== accA[nPrograms];
-    signal isRegisteredProgramB <== accB[nPrograms];
-    // Enforce binary in-circuit (the running sum isn't provably <= 1 via tags).
-    isRegisteredProgramA * (isRegisteredProgramA - 1) === 0;
-    isRegisteredProgramB * (isRegisteredProgramB - 1) === 0;
+    signal {binary} isRegisteredProgramA <== 1 - noMatchA[nPrograms - 1];
+    signal {binary} isRegisteredProgramB <== 1 - noMatchB[nPrograms - 1];
 
 {{ assign_stark_inputs_a }}
 {{ assign_stark_inputs_b }}
@@ -120,8 +129,17 @@ template Main(nPublics, nPrivateInputs, nPrograms) {
     signal selectAVK <== 1 - isRegisteredProgramA;
     signal selectBVK <== isRegisteredProgramA * (1 - isRegisteredProgramB);
 
+    // Each `selector * vk` is one R1CS multiplication; we can't sum three of
+    // them inside a single `<==` (constraint shape is `A*B = C` with one
+    // product). Materialize each term separately, then sum linearly.
+    signal aggTerm[4];
+    signal aTerm[4];
+    signal bTerm[4];
     for (var i = 0; i < 4; i++) {
-        aggregatedPublics[nPublics + i] <== selectAgg * rootCRecurserAgg[i] + selectAVK * programVK_A[i] + selectBVK * programVK_B[i];
+        aggTerm[i] <== selectAgg * rootCRecurserAgg[i];
+        aTerm[i]   <== selectAVK * programVK_A[i];
+        bTerm[i]   <== selectBVK * programVK_B[i];
+        aggregatedPublics[nPublics + i] <== aggTerm[i] + aTerm[i] + bTerm[i];
     }
 }
 

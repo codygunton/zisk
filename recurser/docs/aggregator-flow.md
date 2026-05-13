@@ -108,16 +108,27 @@ Each row corresponds to a contiguous block in
 
 The aggregator compares each proof's `programVK` against the hardcoded
 `programVKs[]` allowlist using an `IsEqualVK` helper (per-element `IsZero`
-AND'd across the 4 elements), then sums the indicators over all `P`
-registered programs:
+AND'd across the 4 elements), then folds the indicators into a 0/1
+membership flag via the complement of a product:
 
 ```
 eq_X[k]                =  IsEqualVK(programVK_X, programVKs[k])
-isRegisteredProgram_X  =  Σ_k  eq_X[k]
+noMatch_X              =  ∏_k (1 − eq_X[k])
+isRegisteredProgram_X  =  1 − noMatch_X
 ```
 
-Assuming no duplicates in `programVKs[]`, the sum is 0 or 1. That's
-enforced in-circuit: `isRegisteredProgram_X * (isRegisteredProgram_X − 1) === 0`.
+Each `eq_X[k]` is `{binary}`, so `(1 − eq_X[k])` is `{binary}`, and the
+running product `noMatch_X[k]` stays `{binary}` through every multiply —
+which is what lets `isRegisteredProgram_X` flow into the `MultiMux1`
+selector below without a circom tag error. (An equivalent
+`Σ_k eq_X[k]` formulation would be cleaner on paper but addition strips
+the binary tag in circom 2.1.)
+
+Soundness of the formulation rests on `programVKs[]` containing no
+duplicates — enforced at setup time by the CLI, not in-circuit. With
+duplicates, two `eq_X[k]` could fire simultaneously for the same input
+and the membership flag would still come out 1, but the registry would
+have admitted the same program twice, which is meaningless.
 
 | Type | `programVK` is… | `rootC` used to verify it | `isRegisteredProgram` |
 |---|---|---|---|
@@ -415,34 +426,85 @@ Every check is in-circuit, so a passing proof is sound.
 ### Prerequisites
 
 The setup pipeline reads `provingKey/<name>/vadcop_final/` (verkey,
-starkinfo, verifierinfo) from the build directory. That folder is produced
+starkinfo, verifierinfo) from the *setup* directory. That folder is produced
 by ZisK's `final` setup stage and has to exist before you run the
-aggregator setup.
+aggregator setup. The recurser writes its own artifacts to a *separate*
+output directory — input and output paths must differ, so one ZisK setup
+can feed any number of recurser configurations without cross-contaminating
+the proving-key tree.
+
+Output layout (under `--output-dir`, default `./build`):
+
+```
+provingKey/recurser/<recurser-id>/    recurser_aggregator.{dat,exec} + witness library
+circom/                                recurser_aggregator.circom + vadcop_final stark verifier
+build/                                 recurser_aggregator.{r1cs,fixed.bin,...}
+pil/                                   recurser_aggregator.pil
+```
+
+The `<recurser-id>` segment lets a single output directory hold multiple
+coexisting setups (different program-VK allowlists, different template
+bodies, different `n-private-inputs`). The id can be passed explicitly
+via `--recurser-id <ID>`; if omitted, a random hex placeholder is
+generated and logged at startup. The eventual identification scheme is
+still TBD — see §13 — but a content-addressed hash of `(program_vks,
+prepare_publics, check_publics, aggregate_publics, n_private_inputs)`
+composed with the vadcop_final proving-key hash is the working
+direction.
+
+The recurser doesn't nest under the source ZisK pilout name
+(`provingKey/<name>/...`) because the artifacts here are
+aggregator-scoped, not ZisK-program-scoped.
+
+> ⚠ **Domain-size constraint.** The recurser-aggregator's own STARK
+> `n_bits` (decided by `plonk2pil` from the generated R1CS) must equal
+> `vadcop_final.starkStruct.nBits`. The aggregator's output proof has to be
+> re-verifiable by the next fold level, which is the same circuit — so
+> different domain sizes would panic the prover. The setup checks this
+> after `plonk2pil` and bails with a message. If it fires, either shrink
+> the recurser circuit (simpler `PreparePublics` / `CheckPublics` /
+> `AggregatePublics`, fewer `private_inputs`) or rebuild `vadcop_final`
+> with a larger `nBits`.
 
 ### CLI (`cargo-zisk`)
 
 ```text
 cargo-zisk setup-recurser-aggregator \
-    --build-dir <BUILD_DIR> \
-    --program-vks <FILE.json> \
+    --program-elf <ELF> [--program-elf <ELF> ...] \
     --aggregate-publics-template <FILE.circom> \
+    [--setup-dir <SETUP_DIR>] \
+    [--output-dir <OUTPUT_DIR>] \
     [--prepare-publics-template <FILE.circom>] \
     [--check-publics-template <FILE.circom>] \
-    [--n-private-inputs <N>]
+    [--n-private-inputs <N>] \
+    [--proving-key <DIR>] \
+    [--cache-dir <DIR>]
 ```
 
 | Flag | Required | Description |
 |---|---|---|
-| `--build-dir` | yes | Path to the proofman build directory (contains `provingKey/<name>/…`) |
-| `--program-vks` | yes | JSON file listing registered program VKs (format details in §13.1) |
+| `--setup-dir` | no | ZisK setup directory to read from (contains `provingKey/<name>/vadcop_final/`). Defaults to `~/.zisk` |
+| `--output-dir` | no | Where to write the recurser-aggregator artifacts. Must differ from `--setup-dir`. Defaults to `./build` |
+| `--recurser-id` | no | Identifier for this setup. Artifacts land under `<output-dir>/provingKey/recurser/<recurser-id>/`. Defaults to a random hex placeholder logged at startup |
+| `--program-elf` | yes (1+) | Guest program ELF(s) to register as recurser leaves. Each is resolved to its program VK via `rom_merkle_setup` and baked into the allowlist. Order fixes the `programVKs[]` index — keep it stable across re-setups |
 | `--aggregate-publics-template` | yes | User's `AggregatePublics` Circom body (§7) |
 | `--prepare-publics-template` | no | Custom `PreparePublics` body. Omit for the built-in identity default (§5) |
 | `--check-publics-template` | no | Custom `CheckPublics` body. Omit for the built-in no-op default (§6) |
 | `--n-private-inputs` | no (default `0`) | Side-input count threaded into the three sub-templates |
+| `--proving-key` | no | Path to the proving key used to build the `ProofCtx` rom-setup runs against. Defaults to the standard ZisK location |
+| `--cache-dir` | no | rom-setup cache directory (`<elfHash>_<pkHash>_…verkey.bin` artifacts). Defaults to `~/.zisk/cache` |
 
-> Wiring this into `cargo-zisk` as a real subcommand is a follow-up. The
-> flag names above are the source of truth — they match
-> [`SetupRecurserAggregatorOptions`](https://github.com/0xPolygonHermez/zisk/blob/feature/recurser/recurser/src/setup/command.rs) one-for-one.
+VK derivation is cache-aware: if `rom_merkle_setup` finds the matching
+`*.verkey.bin` already in `--cache-dir`, it just reads it (no recompute).
+First-time ELFs run the ROM-merkle pass, which is cheaper than full
+`program-setup` because it skips assembly generation.
+
+The flag names above (modulo `--program-elf`) match
+[`SetupRecurserAggregatorOptions`](https://github.com/0xPolygonHermez/zisk/blob/feature/recurser/recurser/src/setup/command.rs)
+one-for-one. The lib API takes program VKs inline as
+`Vec<[String; 4]>` — callers that already have the VKs can skip the
+ELF-resolution step entirely. The subcommand lives at
+[`cli/src/commands/setup_recurser_aggregator.rs`](https://github.com/0xPolygonHermez/zisk/blob/feature/recurser/cli/src/commands/setup_recurser_aggregator.rs).
 
 ### Rust API
 
@@ -450,8 +512,12 @@ cargo-zisk setup-recurser-aggregator \
 use recurser::setup::{run_setup_recurser_aggregator, SetupRecurserAggregatorOptions};
 
 let opts = SetupRecurserAggregatorOptions {
-    build_dir: "/path/to/proofman/build".to_string(),
-    program_vks: "/path/to/program_vks.json".to_string(),
+    setup_dir: "/path/to/zisk/setup".to_string(),            // reads provingKey/<name>/vadcop_final/
+    output_dir: "/path/to/recurser/output".to_string(),      // writes recurser-aggregator artifacts here
+    recurser_id: None,                                        // None ⇒ random hex placeholder
+    program_vks: vec![                                        // 4 decimal-string Goldilocks limbs per program;
+        ["1234".into(), "5678".into(), "9abc".into(), "def0".into()],   // typically derived from ELFs via
+    ],                                                        // rom_merkle_setup in the calling code.
     n_private_inputs: 0,
     prepare_publics_template: None,            // None ⇒ built-in identity (§5)
     check_publics_template: None,              // None ⇒ built-in no-op (§6)
@@ -470,30 +536,23 @@ default); `aggregate_publics` is a required `String`.
 
 ## 13. Open questions
 
-### 1. Format for the program-VKs registry
+### 1. Identification scheme for `<recurser-id>`
 
-The recurser embeds a list `programVKs[P][4]` into the circuit at setup.
-Today the CLI takes bare-array JSON:
+Today the CLI generates a random hex placeholder. The right answer is
+likely a content-addressed hash of the *circuit inputs*:
 
-```json
-[
-  ["1234","5678","abcd","ef01"],
-  ["aaaa","bbbb","cccc","dddd"]
-]
-```
+- `program_vks` (canonicalised — sorted, or by registration order if the
+  position matters for downstream code)
+- `prepare_publics`, `check_publics`, `aggregate_publics` template bodies
+- `n_private_inputs`
+- the vadcop_final proving-key hash (so different ZisK setups produce
+  different recurser ids even for the same recurser inputs)
 
-No firm opinion yet on whether to keep that. Options:
-
-- **Bare array (today).** Minimal, matches the `verkey.json` convention.
-  Downside: zero affordance for humans — there's no way to tell which
-  entry is which program.
-- **Named entries**, e.g. `[{"name": "fibonacci", "vk": [...]}, ...]`. The
-  `name` is purely informational; the aggregator only consumes `vk`. Much
-  easier to read six months later, and diffs become readable.
-- **Directory of `verkey.json` files**, merged in sorted order. Uses
-  ZisK's natural setup output, no manual aggregation. But filename-based
-  ordering means renaming a directory silently changes membership
-  indices — easy to break a setup by mistake.
+That gives the "did I already build this?" cache lookup and lets workers
+in a distributed cluster route by id. The resulting `rootCRecurserAgg`
+is the verifier-side identity and serves as a secondary index. See the
+routing discussion in the related design notes — this section is just
+the placeholder until the scheme is pinned.
 
 ### 2. Zero-enforcement responsibility for fewer-than-64-publics apps
 

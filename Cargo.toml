@@ -110,6 +110,7 @@ zisk-build = { path = "ziskbuild" }
 precompiles-hints = { path = "precompiles/hints" }
 zisk-verifier = { path = "verifier" }
 zisk-definitions = { path = "definitions" }
+recurser = { path = "recurser" }
 
 # Distributed crates
 zisk-cluster-common = { path = "distributed/crates/cluster-common" }
@@ -121,18 +122,19 @@ zisk-coordinator-api = { path = "distributed/crates/coordinator-api" }
 zisk-coordinator-client = { path = "distributed/crates/coordinator-client" }
 
 # Proofman
-proofman = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-proofman-common = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-proofman-macros = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-proofman-verifier = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-proofman-util = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-pil-std-lib = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-witness = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-fields = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-pil2-stark-setup = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
-stark-recurser = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/setup" }
+proofman = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+proofman-common = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+proofman-macros = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+proofman-verifier = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+proofman-util = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+pil-std-lib = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+witness = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+fields = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+pil2-stark-setup = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+stark-recurser = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
+proofman-starks-lib-c = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",branch = "feature/recurser" }
 
-# Proofman Local development
+# Proofman Local development (active while RecurserAggregatorProver lives only on the local checkout)
 # proofman = { path = "../pil2-proofman/proofman" }
 # proofman-common = { path = "../pil2-proofman/common" }
 # proofman-macros = { path = "../pil2-proofman/macros" }
@@ -143,6 +145,7 @@ stark-recurser = { git = "https://github.com/0xPolygonHermez/pil2-proofman.git",
 # fields = { path = "../pil2-proofman/fields" }
 # pil2-stark-setup = { path = "../pil2-proofman/setup/pil2-stark" }
 # stark-recurser = { path = "../pil2-proofman/setup/stark-recurser" }
+# proofman-starks-lib-c = { path = "../pil2-proofman/provers/starks-lib-c" }
 
 # External dependencies
 rayon = "1.10"

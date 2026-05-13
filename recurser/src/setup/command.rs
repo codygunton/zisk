@@ -17,10 +17,22 @@ use super::resolve::{resolve_circom_exec, resolve_path_env};
 use crate::CircomTemplates;
 
 pub struct SetupRecurserAggregatorOptions {
-    /// Build directory containing `provingKey/<name>/vadcop_final/`.
-    pub build_dir: String,
-    /// Path to a JSON file `[["a","b","c","d"], ...]` listing registered program VKs.
-    pub program_vks: String,
+    /// ZisK setup directory to read from. Must contain
+    /// `provingKey/pilout.globalInfo.json` and
+    /// `provingKey/<name>/vadcop_final/`.
+    pub setup_dir: String,
+    /// Where to write the generated recurser-aggregator artifacts. Must differ
+    /// from `setup_dir`.
+    pub output_dir: String,
+    /// Identifier for this recurser setup. Artifacts land under
+    /// `<output_dir>/provingKey/recurser/<recurser_id>/`. When `None`, a
+    /// random hex placeholder is generated (the eventual identification
+    /// scheme is still TBD — see the doc).
+    pub recurser_id: Option<String>,
+    /// Registered program VKs, in order. Each VK is 4 Goldilocks elements as
+    /// decimal-string limbs. The caller is responsible for deriving these
+    /// (e.g. from program ELFs via `rom_merkle_setup`).
+    pub program_vks: Vec<[String; 4]>,
     /// Number of side inputs threaded into the user's `PreparePublics`.
     pub n_private_inputs: usize,
     /// Path to a user-supplied `PreparePublics` Circom body. Optional — when
@@ -34,9 +46,14 @@ pub struct SetupRecurserAggregatorOptions {
 }
 
 pub fn run_setup_recurser_aggregator(opts: &SetupRecurserAggregatorOptions) -> Result<()> {
-    let build_dir = &opts.build_dir;
+    let setup_dir = &opts.setup_dir;
+    let output_dir = &opts.output_dir;
 
-    let global_info_path = PathBuf::from(build_dir).join("provingKey").join("pilout.globalInfo.json");
+    if PathBuf::from(setup_dir) == PathBuf::from(output_dir) {
+        bail!("setup_dir and output_dir must differ (got {:?})", setup_dir);
+    }
+
+    let global_info_path = PathBuf::from(setup_dir).join("provingKey").join("pilout.globalInfo.json");
     if !global_info_path.exists() {
         bail!("Global info file not found: {:?}. Run `setup --recursive` first.", global_info_path);
     }
@@ -45,7 +62,7 @@ pub fn run_setup_recurser_aggregator(opts: &SetupRecurserAggregatorOptions) -> R
 
     // vadcop_final artifacts (the inner verifier this stage will include).
     let vadcop_final_dir =
-        PathBuf::from(build_dir).join("provingKey").join(&name).join("vadcop_final");
+        PathBuf::from(setup_dir).join("provingKey").join(&name).join("vadcop_final");
     let verkey_path = vadcop_final_dir.join("vadcop_final.verkey.json");
     let starkinfo_path = vadcop_final_dir.join("vadcop_final.starkinfo.json");
     let verifier_info_path = vadcop_final_dir.join("vadcop_final.verifierinfo.json");
@@ -60,13 +77,10 @@ pub fn run_setup_recurser_aggregator(opts: &SetupRecurserAggregatorOptions) -> R
     let stark_info: Value = serde_json::from_str(&fs::read_to_string(&starkinfo_path)?)?;
     let verifier_info: Value = serde_json::from_str(&fs::read_to_string(&verifier_info_path)?)?;
 
-    let program_vks_str = fs::read_to_string(&opts.program_vks)
-        .with_context(|| format!("Failed to read program_vks: {}", opts.program_vks))?;
-    let program_vks: Vec<[String; 4]> = serde_json::from_str(&program_vks_str)
-        .with_context(|| format!("Failed to parse program_vks: {}", opts.program_vks))?;
-    if program_vks.is_empty() {
+    if opts.program_vks.is_empty() {
         bail!("program_vks must contain at least one entry");
     }
+    let program_vks = &opts.program_vks;
 
     let load_optional = |opt: &Option<String>, name: &str| -> Result<Option<String>> {
         match opt {
@@ -98,14 +112,17 @@ pub fn run_setup_recurser_aggregator(opts: &SetupRecurserAggregatorOptions) -> R
     let circom_exec = resolve_circom_exec(&circom_helpers_dir);
     let witness_tracker = WitnessTracker::with_goldilocks_src(&goldilocks_src_dir);
 
+    let recurser_id = opts.recurser_id.clone().unwrap_or_else(random_recurser_id);
+    tracing::info!("Recurser id: {}", recurser_id);
+
     let config = RecurserAggregatorConfig {
-        build_dir,
-        name: &name,
+        output_dir,
+        recurser_id: &recurser_id,
         vadcop_final_zisk_vk_row0: &vadcop_final_zisk_vk_row0,
         stark_info: &stark_info,
         verifier_info: &verifier_info,
         n_private_inputs: opts.n_private_inputs,
-        program_vks: &program_vks,
+        program_vks,
         circom_templates: &circom_templates,
         circom_exec: &circom_exec,
         circuits_gl_path: &circuits_gl_path,
@@ -118,6 +135,19 @@ pub fn run_setup_recurser_aggregator(opts: &SetupRecurserAggregatorOptions) -> R
     witness_tracker.await_all()?;
     tracing::info!("Recurser-aggregator setup complete");
     Ok(())
+}
+
+/// Placeholder identifier — random hex derived from wall-clock nanoseconds
+/// XOR'd with the PID. Good enough to keep multiple coexisting setups
+/// distinct under `provingKey/recurser/<id>/`. Will be replaced with a
+/// content-addressed scheme (hash of program-VKs + templates + n_private_inputs)
+/// once that lands; see the doc.
+fn random_recurser_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    format!("{:016x}", nanos ^ (std::process::id() as u64))
 }
 
 fn parse_verkey_4(path: &std::path::Path) -> Result<[String; 4]> {

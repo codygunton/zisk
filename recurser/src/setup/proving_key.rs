@@ -28,8 +28,15 @@ use crate::{gen_aggregator, CircomTemplates};
 
 /// Configuration for the recurser-aggregator setup.
 pub struct RecurserAggregatorConfig<'a> {
-    pub build_dir: &'a str,
-    pub name: &'a str,
+    /// Directory the recurser writes its artifacts to (circom, r1cs, .pil,
+    /// .fixed.bin, .exec, .dat, witness library). Must differ from `setup_dir`.
+    pub output_dir: &'a str,
+    /// Identifier for this recurser setup. The artifacts land under
+    /// `<output_dir>/provingKey/recurser/<recurser_id>/`. Lets a single
+    /// output dir hold multiple coexisting setups (different program lists,
+    /// different template bodies). The eventual scheme is TBD — see the doc
+    /// for context; today the CLI generates a random hex placeholder.
+    pub recurser_id: &'a str,
 
     // Inner (leaf) verifier inputs (read from `provingKey/<name>/vadcop_final/`).
     /// Inner verifier's verkey row 0 — the 4-element rootC used to verify leaf
@@ -60,14 +67,18 @@ pub fn gen_recurser_aggregator_setup(
 ) -> Result<()> {
     let template = "recurser_aggregator";
     let verifier_name = "vadcop_final_stark.verifier.circom";
-    let build_dir = PathBuf::from(config.build_dir);
+    let output_dir = PathBuf::from(config.output_dir);
 
-    let files_dir = build_dir.join("provingKey").join(config.name).join(template);
+    // The recurser output is independent of the source ZisK pilout name, so
+    // it doesn't nest under `provingKey/<name>/`. The `recurser_id` segment
+    // lets a single output dir hold multiple coexisting setups.
+    // circom/build/pil keep their flat locations next to provingKey.
+    let files_dir = output_dir.join("provingKey").join("recurser").join(config.recurser_id);
     fs::create_dir_all(&files_dir)?;
 
-    let circom_dir = build_dir.join("circom");
-    let build_path = build_dir.join("build");
-    let pil_dir = build_dir.join("pil");
+    let circom_dir = output_dir.join("circom");
+    let build_path = output_dir.join("build");
+    let pil_dir = output_dir.join("pil");
     fs::create_dir_all(&circom_dir)?;
     fs::create_dir_all(&build_path)?;
     fs::create_dir_all(&pil_dir)?;
@@ -157,7 +168,7 @@ pub fn gen_recurser_aggregator_setup(
 
     // 5. Witness library
     witness_tracker.run_witness_library_generation(
-        config.build_dir,
+        config.output_dir,
         files_dir.to_str().unwrap_or(""),
         template,
         template,
@@ -172,6 +183,28 @@ pub fn gen_recurser_aggregator_setup(
         PlonkOptions { airgroup_name: Some("RecurserAggregator".to_string()), max_constraint_degree: None };
     let plonk_result: PlonkResult = plonk2pil::plonk2pil(&r1cs_data, "aggregation", &plonk_opts)
         .context("plonk2pil failed in recurser_aggregator setup")?;
+
+    // The recurser-aggregator proof itself has to be re-verifiable by the next
+    // fold level (which is the same circuit). That only holds if its STARK
+    // domain matches vadcop_final's — otherwise the prover panics when this
+    // proof is fed back in. Fail fast at setup time instead.
+    let vadcop_n_bits = config
+        .stark_info
+        .get("starkStruct")
+        .and_then(|s| s.get("nBits"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .context("vadcop_final stark_info is missing starkStruct.nBits")?;
+    if plonk_result.n_bits != vadcop_n_bits {
+        bail!(
+            "Recurser-aggregator n_bits ({}) does not match vadcop_final starkStruct.nBits ({}). \
+             The aggregator's output proof must share the inner verifier's domain — \
+             reduce circuit size (fewer publics ops, smaller templates) or rebuild \
+             vadcop_final with a larger nBits.",
+            plonk_result.n_bits,
+            vadcop_n_bits,
+        );
+    }
 
     let fixed_bin_path = build_path.join(format!("{}.fixed.bin", template));
     let fixed_info: Vec<(String, Vec<u32>, Vec<u64>)> =
