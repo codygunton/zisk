@@ -1,0 +1,33 @@
+[package]
+name = "recurser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository.workspace = true
+categories.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tera = { workspace = true }
+
+# `setup` feature pulls in the heavy pil2-proofman setup pipeline.
+pil2-stark-setup = { workspace = true, optional = true }
+stark-recurser = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+[features]
+default = []
+# Enables the `setup` submodule: generates witness-side artifacts (.circom,
+# .r1cs, .dat, .pil, .fixed.bin, .exec) for the recurser-aggregator stage by
+# driving pil2-stark-setup's helpers and stark-recurser's plonk2pil + stark
+# input generators.
+setup = [
+    "dep:pil2-stark-setup",
+    "dep:stark-recurser",
+    "dep:anyhow",
+    "dep:tracing",
+]

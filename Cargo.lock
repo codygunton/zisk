@@ -4843,6 +4843,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "recurser"
+version = "0.17.1"
+dependencies = [
+ "anyhow",
+ "pil2-stark-setup",
+ "serde",
+ "serde_json",
+ "stark-recurser",
+ "tera",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
