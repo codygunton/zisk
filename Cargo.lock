@@ -5413,11 +5413,8 @@ version = "0.17.1"
 dependencies = [
  "fields 0.17.0 (git+https://github.com/0xPolygonHermez/pil2-proofman.git?branch=pre-develop-0.17.1)",
  "mem-common",
- "num-bigint",
  "pil-std-lib",
  "proofman-common",
- "proofman-macros",
- "proofman-util",
  "rayon",
  "thiserror 2.0.18",
  "tracing",
