@@ -2,7 +2,8 @@
     "std_mode": {
         "print_to_file": true,
         "n_vals": 1000000,
-        "fast_mode": false
+        "fast_mode": false,
+        "opids": [5002]
     },
     "store_row_info": true
 }
