@@ -21,6 +21,7 @@ use zisk_pil::{ArithTrace, ArithTraceRowOps};
 
 const CHUNK_SIZE: u64 = 0x10000;
 const EXTENSION: u64 = 0xFFFFFFFF;
+const REPRO_BAD_ARITH_MUL_ENV: &str = "ZISK_REPRO_BAD_ARITH_MUL";
 
 /// The `ArithFullSM` struct represents the Arithmetic Full State Machine.
 ///
@@ -221,6 +222,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         let b = OperationBusData::get_b(&input_data);
 
         aop.calculate(opcode, a, b);
+        Self::maybe_inject_bad_mul_repro(aop, opcode, a, b);
         let mut row = R::default();
         for i in [0, 2] {
             row.set_a(i, aop.a[i] as u16);
@@ -332,5 +334,39 @@ impl<F: PrimeField64> ArithFullSM<F> {
         row.set_bus_res1(bus_res1 as u32);
 
         row
+    }
+
+    fn maybe_inject_bad_mul_repro(aop: &mut ArithOperation, opcode: u8, a: u64, b: u64) {
+        if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_none() {
+            return;
+        }
+
+        if opcode != ZiskOp::Mul.code() || a != u64::MAX || b != 1 {
+            return;
+        }
+
+        tracing::warn!(
+            "injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0"
+        );
+
+        aop.a = [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF];
+        aop.b = [1, 0, 0, 0];
+        aop.c = [1, 0, 0, 0];
+        aop.d = [0, 0, 0, 0];
+        aop.carry = [-1, -1, -1, -1, 0, 0, 0];
+        aop.m32 = false;
+        aop.div = false;
+        aop.na = true;
+        aop.nb = false;
+        aop.np = false;
+        aop.nr = false;
+        aop.sext = false;
+        aop.main_mul = true;
+        aop.main_div = false;
+        aop.signed = true;
+        aop.range_ab = 7;
+        aop.range_cd = 1;
+        aop.div_by_zero = false;
+        aop.div_overflow = false;
     }
 }

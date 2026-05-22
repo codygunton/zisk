@@ -38,6 +38,8 @@ use crate::{
     FCALL_PARAMS_MAX_SIZE, FCALL_RESULT_MAX_SIZE,
 };
 
+const REPRO_BAD_ARITH_MUL_ENV: &str = "ZISK_REPRO_BAD_ARITH_MUL";
+
 /// Determines the type of a [`ZiskOp`].
 ///
 /// The type will be used to assign the proof generation of a main state machine operation result to
@@ -916,6 +918,10 @@ pub fn opc_mulu(ctx: &mut InstContext) {
 /// Sets c to a x b, as 64-bits signed values, and flag to false
 #[inline(always)]
 pub fn op_mul(a: u64, b: u64) -> (u64, bool) {
+    if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_some() && a == u64::MAX && b == 1 {
+        return (1, false);
+    }
+
     ((Wrapping(a as i64) * Wrapping(b as i64)).0 as u64, false)
 }
 
