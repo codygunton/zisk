@@ -4,12 +4,14 @@
 #
 # state-machines/arith/pil/arith.pil on this branch carries the np-sign
 # constraint. This script recompiles zisk.pilout and regenerates the proving
-# key so the patched Arith AIR is what the prover and verifier actually
-# enforce. Output goes to ~/.zisk/provingKey-patched; the stock
-# ~/.zisk/provingKey is left untouched.
+# key so the patched Arith AIR is what the verifier actually enforces. Output
+# goes to ~/.zisk/provingKey-patched; the stock ~/.zisk/provingKey is left
+# untouched.
 #
-# Mirrors the steps of tools/test-env/build_setup.sh. Versions of the pil2
-# toolchain are pinned in Dockerfile.repro-arith-mul (tools/test-env/.env).
+# Only the *basic* per-AIR setup is generated -- not the recursive/aggregation
+# setup (`-r`). That basic setup is everything `verify-constraints` needs (it
+# evaluates every AIR's local constraints plus the global constraints), and it
+# rebuilds in minutes rather than the hours a full recursive setup takes.
 #
 set -euo pipefail
 
@@ -18,7 +20,6 @@ std_pil=/workspace/pil2-proofman/pil2-components/lib/std/pil
 pil_compiler=/workspace/pil2-compiler/src/pil.js
 proofman_js=/workspace/pil2-proofman-js/src/main_setup.js
 patched_pk="${HOME}/.zisk/provingKey-patched"
-cargo_zisk="${zisk}/target-docker/release/cargo-zisk"
 
 cd "$zisk"
 
@@ -33,18 +34,16 @@ node --max-old-space-size=16384 "$pil_compiler" pil/zisk.pil \
     -I pil,"$std_pil",state-machines,precompiles \
     -o pil/zisk.pilout -u tmp/fixed -O fixed-to-file
 
-echo "[rebuild] generating setup (proving key)..."
+echo "[rebuild] generating basic setup (no recursive setup)..."
 rm -rf build/provingKey
 node --max-old-space-size=16384 --stack-size=8192 "$proofman_js" \
     -a ./pil/zisk.pilout -b build \
-    -u tmp/fixed -t "$std_pil" -r \
+    -u tmp/fixed \
     -s state-machines/starkstructs.json
 
 echo "[rebuild] installing patched proving key -> ${patched_pk}"
-rm -rf "$patched_pk"
-cp -R build/provingKey "$patched_pk"
-
-echo "[rebuild] generating GPU constant trees..."
-"$cargo_zisk" check-setup -k "$patched_pk" --gpu
+rm -rf "$patched_pk" "${patched_pk}.tmp"
+cp -R build/provingKey "${patched_pk}.tmp"
+mv "${patched_pk}.tmp" "$patched_pk"
 
 echo "[rebuild] done."

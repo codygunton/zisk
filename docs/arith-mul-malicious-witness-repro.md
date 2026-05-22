@@ -106,13 +106,22 @@ pil2 toolchain needed to recompile the circuit. `repro-arith-mul.sh` then runs
 three phases:
 
 - **Phase 1** — stock proving key + malicious witness → `prove --verify-proofs`
-  generates a proof of `MUL(-1,1) = 1` that **verifies**.
+  generates a full STARK proof of `MUL(-1,1) = 1` that **verifies**.
 - **Phase 2** — recompile `zisk.pilout` from the patched `arith.pil` and
-  regenerate the proving key into `~/.zisk/provingKey-patched`. This is slow
-  (PIL compile + setup generation + GPU constant trees) and is cached, so it
+  regenerate the basic setup into `~/.zisk/provingKey-patched`. Cached, so it
   runs at most once.
-- **Phase 3** — patched proving key + malicious witness → proof **rejected**;
-  patched proving key + honest witness → proof **verifies**.
+- **Phase 3** — patched proving key + malicious witness → `verify-constraints`
+  **rejects** it; patched proving key + honest witness → `verify-constraints`
+  **passes**.
+
+Phase 3 uses `verify-constraints` rather than `prove`: it evaluates every AIR's
+local constraints and all global constraints (including the Main↔Arith
+operation-bus permutation) directly on the trace — the same constraint system a
+proof commits to. The patched Arith constraint is local, so the malicious row
+is rejected there. Generating a full proof would additionally require rebuilding
+ZisK's recursive/aggregation setup, which takes hours and adds nothing to the
+constraint demonstration; the basic setup Phase 2 produces is all
+`verify-constraints` needs.
 
 The `~/.zisk` mount is the canonical ZisK directory. The stock v0.18.0 proving
 key is installed there by `ziskup` if absent, and the rebuilt patched key is
