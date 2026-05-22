@@ -22,6 +22,7 @@ use zisk_pil::{ArithTrace, ArithTraceRowOps};
 const CHUNK_SIZE: u64 = 0x10000;
 const EXTENSION: u64 = 0xFFFFFFFF;
 const REPRO_BAD_ARITH_MUL_ENV: &str = "ZISK_REPRO_BAD_ARITH_MUL";
+const REPRO_BAD_ARITH_MUL_KIND_ENV: &str = "ZISK_REPRO_BAD_ARITH_MUL_KIND";
 
 /// The `ArithFullSM` struct represents the Arithmetic Full State Machine.
 ///
@@ -341,19 +342,32 @@ impl<F: PrimeField64> ArithFullSM<F> {
             return;
         }
 
-        if opcode != ZiskOp::Mul.code() || a != u64::MAX || b != 1 {
+        if a != u64::MAX || b != 1 {
             return;
         }
 
-        tracing::warn!(
-            "injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0"
-        );
+        let kind = std::env::var(REPRO_BAD_ARITH_MUL_KIND_ENV)
+            .unwrap_or_else(|_| "MUL".to_string())
+            .to_ascii_uppercase();
+
+        let (expected_opcode, main_mul, range_ab) = match kind.as_str() {
+            "MUL" => (ZiskOp::Mul.code(), true, 7),
+            "MULH" => (ZiskOp::Mulh.code(), false, 7),
+            "MULHSU" => (ZiskOp::Mulsuh.code(), false, 6),
+            _ => return,
+        };
+
+        if opcode != expected_opcode {
+            return;
+        }
+
+        tracing::warn!("injecting bad Arith {} repro row: a=0xffffffffffffffff b=1 c=1 d=0", kind);
 
         aop.a = [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF]; // operand a = -1, as 16-bit limbs (honest)
         aop.b = [1, 0, 0, 0]; // operand b = 1, as 16-bit limbs (honest)
         aop.c = [1, 0, 0, 0]; // THE LIE: low 64 bits of product = 1 (honest: all-ones)
         aop.d = [0, 0, 0, 0]; // THE LIE: high 64 bits of product = 0 (honest: all-ones)
-        // inter-limb carries, crafted so the chunk equation still balances with the lie
+                              // inter-limb carries, crafted so the chunk equation still balances with the lie
         aop.carry = [-1, -1, -1, -1, 0, 0, 0];
         aop.m32 = false; // 64-bit op, not a 32-bit *W variant
         aop.div = false; // multiplication, not division
@@ -362,10 +376,10 @@ impl<F: PrimeField64> ArithFullSM<F> {
         aop.np = false; // claimed product is non-negative (matches the fake c=1, d=0)
         aop.nr = false; // no remainder (not a div/rem op)
         aop.sext = false; // no 32-bit sign extension (64-bit op)
-        aop.main_mul = true; // result is returned to the Main SM as a MUL result
+        aop.main_mul = main_mul; // low MUL is primary; high-half variants are secondary
         aop.main_div = false; // not a division result
         aop.signed = true; // MUL is a signed multiply
-        aop.range_ab = 7; // range-check selector for a/b limbs (a negative, b positive)
+        aop.range_ab = range_ab; // signed*signed uses -,+; signed*unsigned only constrains a
         aop.range_cd = 1; // range-check selector for c/d limbs (matches the fake product)
         aop.div_by_zero = false; // not a division
         aop.div_overflow = false; // not a division

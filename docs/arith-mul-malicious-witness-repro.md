@@ -2,7 +2,9 @@
 
 ## TL;DR
 
-**Stock ZisK accepts a proof that `-1 * 1 = 1`.** This branch demonstrates it.
+**Stock ZisK accepts signed-MUL-family malicious witnesses.** This branch
+demonstrates low `MUL(-1, 1) = 1` and high-half
+`MULH(-1, 1) = 0` / `MULHSU(-1, 1) = 0`.
 
 We do **not** change any circuit, constraint, or verifier code. The AIR
 constraints and the proof verifier are exactly stock ZisK. What we change is
@@ -10,10 +12,11 @@ the *witness* — the trace values fed to the prover — because the witness is
 precisely what a malicious prover controls.
 
 ZisK's witness is built by a witness generator. An attacker forging a proof
-runs their own witness generator, so this repro simulates one: under an env
-flag it emits a trace claiming `MUL(-1, 1) = 1`. Stock ZisK's constraints then
-accept that trace — locally and globally — and `prove --verify-proofs`
-produces a proof that verifies.
+runs their own witness generator, so this repro simulates one: under env
+flags it emits traces claiming `MUL(-1, 1) = 1`, `MULH(-1, 1) = 0`, or
+`MULHSU(-1, 1) = 0`. Stock ZisK's constraints then accept those traces —
+locally and globally — and `prove --verify-proofs` produces proofs that
+verify.
 
 That acceptance is the bug, and it lives in the Arith circuit, not in our
 patch: the signed-multiplication constraints do not pin the result for this
@@ -42,7 +45,10 @@ proposed fix.
 
 - `core/src/zisk_ops.rs`
   - Under `ZISK_REPRO_BAD_ARITH_MUL=1`, Main computes
-    `op_mul(0xffffffffffffffff, 1) = 1`.
+    `op_mul(0xffffffffffffffff, 1) = 1`,
+    `op_mulh(0xffffffffffffffff, 1) = 0`, or
+    `op_mulsuh(0xffffffffffffffff, 1) = 0`, selected by
+    `ZISK_REPRO_BAD_ARITH_MUL_KIND`.
   - This makes Main store the malicious result and assume that result on the
     operation bus.
 - `state-machines/arith/src/arith_full.rs`
@@ -56,8 +62,9 @@ proposed fix.
     - `range_ab = 7`
     - `range_cd = 1`
     - `carry = [-1, -1, -1, -1, 0, 0, 0]`
-- `elf-regressions/arith_bad_mul/test.s`
-  - Minimal RV64 assembly input that executes `li t0, -1; li t1, 1; mul t2, t0, t1`.
+- `elf-regressions/arith_bad_{mul,mulh,mulhsu}/test.s`
+  - Minimal RV64 assembly inputs that execute `li t0, -1; li t1, 1`
+    followed by `mul`, `mulh`, or `mulhsu`.
 
 Main and Arith agree on the same bad operation-bus result, so the global bus
 permutation balances. The issue is that the Arith constraints do not force the
@@ -66,8 +73,8 @@ signed multiplication result to be correct for this sign pattern.
 ## Build and run
 
 The reproduction runs entirely through the branch Dockerfile, which builds a
-GPU-capable `cargo-zisk` and the tiny `MUL` ELF. See `Dockerfile.repro-arith-mul`
-for the exact build steps and dependencies.
+GPU-capable `cargo-zisk` and tiny `MUL`, `MULH`, and `MULHSU` ELFs. See
+`Dockerfile.repro-arith-mul` for the exact build steps and dependencies.
 
 It requires an NVIDIA GPU and the NVIDIA Container Toolkit. The build targets
 compute capability `sm_120` (RTX 5090); change `CUDA_ARCH` in the Dockerfile
@@ -95,17 +102,20 @@ malicious witness through two clearly labelled steps:
   and runs the stock verifier on that proof.
 
 Both steps run with `ZISK_REPRO_BAD_ARITH_MUL=1`, so both operate on the
-malicious witness, and each prints the bad-row warning:
+malicious witness. `ZISK_REPRO_BAD_ARITH_MUL_KIND` selects the opcode under
+test, and each case prints a bad-row warning:
 
 ```text
-WARN: injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0
+WARN: injecting bad Arith MULH repro row: a=0xffffffffffffffff b=1 c=1 d=0
 ```
 
 The script ends with an explicit summary:
 
 ```text
 Step 1  verify-constraints    : ACCEPTED  -- malicious trace passed all constraints
-Step 2  prove --verify-proofs  : VERIFIED  -- a proof of MUL(-1,1)=1 was generated and verified
+Step 2  prove --verify-proofs  : VERIFIED  -- malicious proof was generated and verified
 
-RESULT: BUG REPRODUCED -- stock ZisK accepted and proved MUL(-1, 1) = 1.
+RESULT MULH: BUG REPRODUCED -- stock ZisK accepted and proved MULH(-1, 1) = 0.
+
+RESULT: ALL BUGS REPRODUCED -- stock ZisK accepted and verified all malicious signed-MUL witnesses.
 ```

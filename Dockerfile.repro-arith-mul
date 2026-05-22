@@ -60,7 +60,25 @@ RUN mkdir -p /tmp/zisk-mul-edge \
         -static \
         -Ttext=0x80000000 \
         elf-regressions/arith_bad_mul/test.s \
-        -o /tmp/zisk-mul-edge/arith_bad_mul.elf
+        -o /tmp/zisk-mul-edge/arith_bad_mul.elf \
+    && riscv64-unknown-elf-gcc \
+        -march=rv64imac \
+        -mabi=lp64 \
+        -nostdlib \
+        -nostartfiles \
+        -static \
+        -Ttext=0x80000000 \
+        elf-regressions/arith_bad_mulh/test.s \
+        -o /tmp/zisk-mul-edge/arith_bad_mulh.elf \
+    && riscv64-unknown-elf-gcc \
+        -march=rv64imac \
+        -mabi=lp64 \
+        -nostdlib \
+        -nostartfiles \
+        -static \
+        -Ttext=0x80000000 \
+        elf-regressions/arith_bad_mulhsu/test.s \
+        -o /tmp/zisk-mul-edge/arith_bad_mulhsu.elf
 
 RUN install -Dm755 ziskup/ziskup /usr/local/bin/ziskup
 

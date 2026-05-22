@@ -39,6 +39,13 @@ use crate::{
 };
 
 const REPRO_BAD_ARITH_MUL_ENV: &str = "ZISK_REPRO_BAD_ARITH_MUL";
+const REPRO_BAD_ARITH_MUL_KIND_ENV: &str = "ZISK_REPRO_BAD_ARITH_MUL_KIND";
+
+fn repro_bad_arith_mul_kind_is(kind: &str) -> bool {
+    std::env::var(REPRO_BAD_ARITH_MUL_KIND_ENV)
+        .map(|value| value.eq_ignore_ascii_case(kind))
+        .unwrap_or(kind == "MUL")
+}
 
 /// Determines the type of a [`ZiskOp`].
 ///
@@ -924,7 +931,11 @@ pub fn op_mul(a: u64, b: u64) -> (u64, bool) {
     // tuple is (result, flag); MUL never sets the flag, so we still return
     // `false` here -- the injected value differs from an honest MUL only in
     // the result, keeping the lie minimal and consistent with the opcode.
-    if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_some() && a == u64::MAX && b == 1 {
+    if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_some()
+        && repro_bad_arith_mul_kind_is("MUL")
+        && a == u64::MAX
+        && b == 1
+    {
         return (1, false);
     }
 
@@ -963,7 +974,15 @@ pub fn opc_muluh(ctx: &mut InstContext) {
 
 /// Sets c to the highest 64-bits of a x b, as 128-bits unsigned values, and flag to false
 #[inline(always)]
-pub const fn op_mulh(a: u64, b: u64) -> (u64, bool) {
+pub fn op_mulh(a: u64, b: u64) -> (u64, bool) {
+    if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_some()
+        && repro_bad_arith_mul_kind_is("MULH")
+        && a == u64::MAX
+        && b == 1
+    {
+        return (0, false);
+    }
+
     (((((a as i64) as i128) * ((b as i64) as i128)) >> 64) as u64, false)
 }
 
@@ -975,7 +994,15 @@ pub fn opc_mulh(ctx: &mut InstContext) {
 
 /// Sets c to the highest 64-bits of a x b, as 128-bits signed values, and flag to false
 #[inline(always)]
-pub const fn op_mulsuh(a: u64, b: u64) -> (u64, bool) {
+pub fn op_mulsuh(a: u64, b: u64) -> (u64, bool) {
+    if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_some()
+        && repro_bad_arith_mul_kind_is("MULHSU")
+        && a == u64::MAX
+        && b == 1
+    {
+        return (0, false);
+    }
+
     (((((a as i64) as i128) * (b as i128)) >> 64) as u64, false)
 }
 
