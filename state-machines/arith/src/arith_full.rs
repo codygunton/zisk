@@ -349,24 +349,25 @@ impl<F: PrimeField64> ArithFullSM<F> {
             "injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0"
         );
 
-        aop.a = [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF];
-        aop.b = [1, 0, 0, 0];
-        aop.c = [1, 0, 0, 0];
-        aop.d = [0, 0, 0, 0];
+        aop.a = [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF]; // operand a = -1, as 16-bit limbs (honest)
+        aop.b = [1, 0, 0, 0]; // operand b = 1, as 16-bit limbs (honest)
+        aop.c = [1, 0, 0, 0]; // THE LIE: low 64 bits of product = 1 (honest: all-ones)
+        aop.d = [0, 0, 0, 0]; // THE LIE: high 64 bits of product = 0 (honest: all-ones)
+        // inter-limb carries, crafted so the chunk equation still balances with the lie
         aop.carry = [-1, -1, -1, -1, 0, 0, 0];
-        aop.m32 = false;
-        aop.div = false;
-        aop.na = true;
-        aop.nb = false;
-        aop.np = false;
-        aop.nr = false;
-        aop.sext = false;
-        aop.main_mul = true;
-        aop.main_div = false;
-        aop.signed = true;
-        aop.range_ab = 7;
-        aop.range_cd = 1;
-        aop.div_by_zero = false;
-        aop.div_overflow = false;
+        aop.m32 = false; // 64-bit op, not a 32-bit *W variant
+        aop.div = false; // multiplication, not division
+        aop.na = true; // operand a is negative (-1)
+        aop.nb = false; // operand b is non-negative (1)
+        aop.np = false; // claimed product is non-negative (matches the fake c=1, d=0)
+        aop.nr = false; // no remainder (not a div/rem op)
+        aop.sext = false; // no 32-bit sign extension (64-bit op)
+        aop.main_mul = true; // result is returned to the Main SM as a MUL result
+        aop.main_div = false; // not a division result
+        aop.signed = true; // MUL is a signed multiply
+        aop.range_ab = 7; // range-check selector for a/b limbs (a negative, b positive)
+        aop.range_cd = 1; // range-check selector for c/d limbs (matches the fake product)
+        aop.div_by_zero = false; // not a division
+        aop.div_overflow = false; // not a division
     }
 }

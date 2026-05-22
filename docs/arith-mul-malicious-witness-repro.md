@@ -65,14 +65,18 @@ signed multiplication result to be correct for this sign pattern.
 
 ## Build and run
 
-The reproduction runs entirely through the branch Dockerfile, which builds
-`cargo-zisk` and the tiny `MUL` ELF. See `Dockerfile.repro-arith-mul` for the
-exact build steps and dependencies.
+The reproduction runs entirely through the branch Dockerfile, which builds a
+GPU-capable `cargo-zisk` and the tiny `MUL` ELF. See `Dockerfile.repro-arith-mul`
+for the exact build steps and dependencies.
+
+It requires an NVIDIA GPU and the NVIDIA Container Toolkit. The build targets
+compute capability `sm_120` (RTX 5090); change `CUDA_ARCH` in the Dockerfile
+for a different GPU.
 
 ```bash
 docker build -f Dockerfile.repro-arith-mul -t zisk-arith-mul-repro .
 
-docker run --rm \
+docker run --rm --gpus all \
   -v "$HOME/.zisk:/root/.zisk" \
   zisk-arith-mul-repro
 ```
@@ -82,41 +86,26 @@ contain a `provingKey`, the container installs the stock v0.18.0 proving key
 into it with `ziskup`; if the key is already present, that step is skipped, so
 the (large) key is downloaded at most once and reused across runs.
 
-The default container command performs both runs back to back:
+The default container command runs `repro-arith-mul.sh`, which exercises the
+malicious witness through two clearly labelled steps:
 
-- a control `verify-constraints --emulator` run, where all local and global
-  constraints pass; and
-- the malicious env-gated (`ZISK_REPRO_BAD_ARITH_MUL=1`) run, which prints the
-  bad-row warning and still accepts every local and global constraint:
+- **Step 1 — `verify-constraints`** (quick check): builds the execution trace
+  and checks every AIR and global constraint. No proof is produced.
+- **Step 2 — `prove --verify-proofs`** (full proof): generates a STARK proof
+  and runs the stock verifier on that proof.
+
+Both steps run with `ZISK_REPRO_BAD_ARITH_MUL=1`, so both operate on the
+malicious witness, and each prints the bad-row warning:
 
 ```text
 WARN: injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0
 ```
 
-## Full proof verifier
-
-The default run verifies AIR and global constraints. To also generate proofs
-and verify them after generation, override the container command:
-
-```bash
-docker run --rm \
-  -v "$HOME/.zisk:/root/.zisk" \
-  zisk-arith-mul-repro \
-  bash -lc 'set -eu; \
-    pk="$HOME/.zisk/provingKey"; \
-    [ -d "$pk" ] || ziskup --version 0.18.0 --provingkey --cpu -y; \
-    ZISK_REPRO_BAD_ARITH_MUL=1 RUST_LOG=info \
-    ./target-docker/release/cargo-zisk prove \
-      --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
-      --emulator \
-      -k "$pk" \
-      --verify-proofs \
-      -o /tmp/arith_bad_mul.proof'
-```
-
-Observed result on this branch: the malicious proof path also accepts. The run
-prints the bad-row warning during proof generation and then logs:
+The script ends with an explicit summary:
 
 ```text
-✓ Vadcop Final proof was verified
+Step 1  verify-constraints    : ACCEPTED  -- malicious trace passed all constraints
+Step 2  prove --verify-proofs  : VERIFIED  -- a proof of MUL(-1,1)=1 was generated and verified
+
+RESULT: BUG REPRODUCED -- stock ZisK accepted and proved MUL(-1, 1) = 1.
 ```
