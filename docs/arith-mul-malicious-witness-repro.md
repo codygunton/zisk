@@ -1,17 +1,42 @@
 # Arith MUL Malicious-Witness Repro
 
-This branch demonstrates that a malicious witness generator can make ZisK
-accept an RV64 `MUL` row where `-1 * 1` produces `1` instead of the correct
-low 64-bit result `0xffffffffffffffff`.
+## TL;DR
 
-The repro is intentionally env-gated. Normal execution is unchanged unless
-`ZISK_REPRO_BAD_ARITH_MUL=1` is set.
+**Stock ZisK accepts a proof that `-1 * 1 = 1`.** This branch demonstrates it.
 
-This is a reproduction branch, not a proposed fix. The env-gated code mutates
-both the Main result and the Arith witness so the ordinary
-`verify-constraints --emulator` entrypoint can inspect the same kind of
-globally balanced malicious trace that a hostile witness generator could try to
-submit.
+We do **not** change any circuit, constraint, or verifier code. The AIR
+constraints and the proof verifier are exactly stock ZisK. What we change is
+the *witness* — the trace values fed to the prover — because the witness is
+precisely what a malicious prover controls.
+
+ZisK's witness is built by a witness generator. An attacker forging a proof
+runs their own witness generator, so this repro simulates one: under an env
+flag it emits a trace claiming `MUL(-1, 1) = 1`. Stock ZisK's constraints then
+accept that trace — locally and globally — and `prove --verify-proofs`
+produces a proof that verifies.
+
+That acceptance is the bug, and it lives in the Arith circuit, not in our
+patch: the signed-multiplication constraints do not pin the result for this
+sign pattern. Because the repro makes no circuit changes, the verifier is the
+fixed reference point here — this branch only shows that the *unmodified*
+verifier will accept `-1 * 1 = 1`. The fix, when it comes, is also a circuit
+change; nothing in this repro needs to be undone in the verifier.
+
+### Why two files are patched
+
+A malicious prover cannot change one number in isolation. ZisK's Main and
+Arith state machines are linked by the operation bus, and the global
+permutation check forces the two sides to agree. A real attacker's witness
+generator must therefore produce a *self-consistent* malicious trace on both
+sides. The two env-gated patches — `core/src/zisk_ops.rs` (Main) and
+`state-machines/arith/src/arith_full.rs` (Arith) — are not two independent
+hacks; together they are one self-consistent malicious witness, the minimum
+needed to pass the global bus check. Patching only the Arith side fails global
+constraint #0 — that is the system working as intended.
+
+The repro is intentionally env-gated: normal execution is unchanged unless
+`ZISK_REPRO_BAD_ARITH_MUL=1` is set. This is a reproduction branch, not a
+proposed fix.
 
 ## What the patch changes
 
@@ -38,127 +63,53 @@ Main and Arith agree on the same bad operation-bus result, so the global bus
 permutation balances. The issue is that the Arith constraints do not force the
 signed multiplication result to be correct for this sign pattern.
 
-## Build
+## Build and run
 
-The easiest reproduction path is the branch Dockerfile:
+The reproduction runs entirely through the branch Dockerfile, which builds
+`cargo-zisk` and the tiny `MUL` ELF. See `Dockerfile.repro-arith-mul` for the
+exact build steps and dependencies.
 
 ```bash
-docker build \
-  -f Dockerfile.repro-arith-mul \
-  -t zisk-arith-mul-repro \
-  .
+docker build -f Dockerfile.repro-arith-mul -t zisk-arith-mul-repro .
 
 docker run --rm \
-  -v "$HOME/.zisk/provingKey:/provingKey:ro" \
+  -v "$HOME/.zisk:/root/.zisk" \
   zisk-arith-mul-repro
 ```
 
-That default container run performs both the control
-`verify-constraints --emulator` run and the malicious env-gated
-`verify-constraints --emulator` run. The malicious run is expected to print
-the bad-row warning below and still accept all local and global constraints.
+The `~/.zisk` mount is the canonical ZisK directory. If it does not already
+contain a `provingKey`, the container installs the stock v0.18.0 proving key
+into it with `ziskup`; if the key is already present, that step is skipped, so
+the (large) key is downloaded at most once and reused across runs.
 
-On Ubuntu 24.04 with ZisK's usual native dependencies:
+The default container command performs both runs back to back:
 
-```bash
-cargo build --release --bin cargo-zisk --features cpu-only
-```
-
-On a host whose MPI/Clang libraries do not match ZisK's dependencies, this
-Docker command matches the environment used by the test monitor:
-
-```bash
-docker run --rm \
-  -v "$PWD:/workspace/zisk" \
-  -v "$HOME/.cargo/registry:/root/.cargo/registry" \
-  -v "$HOME/.cargo/git:/root/.cargo/git" \
-  -w /workspace/zisk \
-  -e CARGO_NET_GIT_FETCH_WITH_CLI=true \
-  -e CARGO_TARGET_DIR=/workspace/zisk/target-docker \
-  ubuntu:24.04 bash -lc '
-    set -euo pipefail
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update >/dev/null
-    apt-get install -y \
-      curl git ca-certificates build-essential clang libclang-dev pkg-config cmake \
-      jq xz-utils libomp-dev libgmp-dev nlohmann-json3-dev protobuf-compiler \
-      uuid-dev libgrpc++-dev libsecp256k1-dev libsodium-dev libpqxx-dev nasm \
-      libopenmpi-dev openmpi-bin openmpi-common gcc-riscv64-unknown-elf >/dev/null
-    if [ ! -x /root/.cargo/bin/cargo ]; then
-      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y >/dev/null
-    fi
-    . /root/.cargo/env
-    cargo build --release --bin cargo-zisk --features cpu-only
-  '
-```
-
-## Build the tiny ELF
-
-```bash
-mkdir -p /tmp/zisk-mul-edge
-riscv64-unknown-elf-gcc \
-  -march=rv64imac -mabi=lp64 \
-  -nostdlib -nostartfiles -static -Ttext=0x80000000 \
-  elf-regressions/arith_bad_mul/test.s \
-  -o /tmp/zisk-mul-edge/arith_bad_mul.elf
-```
-
-## Control run
-
-```bash
-LD_LIBRARY_PATH=/path/to/zisk-lib \
-  ./target-docker/release/cargo-zisk \
-  verify-constraints \
-  --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
-  --emulator \
-  -k "$HOME/.zisk/provingKey"
-```
-
-Expected result: all local and global constraints pass.
-
-If you built directly on the host instead of using the Docker command, replace
-`./target-docker/release/cargo-zisk` with `./target/release/cargo-zisk`.
-
-## Malicious run
-
-```bash
-ZISK_REPRO_BAD_ARITH_MUL=1 \
-RUST_LOG=info \
-LD_LIBRARY_PATH=/path/to/zisk-lib \
-  ./target-docker/release/cargo-zisk \
-  verify-constraints \
-  --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
-  --emulator \
-  -k "$HOME/.zisk/provingKey"
-```
-
-Expected result: all local and global constraints still pass, and the log
-contains:
+- a control `verify-constraints --emulator` run, where all local and global
+  constraints pass; and
+- the malicious env-gated (`ZISK_REPRO_BAD_ARITH_MUL=1`) run, which prints the
+  bad-row warning and still accepts every local and global constraint:
 
 ```text
 WARN: injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0
 ```
 
-In the original investigation, patching only Arith caused the Arith instance
-to pass but global constraint #0 to fail. This branch patches Main as well,
-which demonstrates that the global operation-bus check links Main and Arith
-but does not make the Arith signed multiplication relation sound.
-
 ## Full proof verifier
 
-The command above verifies the AIR and global constraints for the generated
-execution trace. To also ask ZisK to generate proofs and verify them after
-generation, override the container command:
+The default run verifies AIR and global constraints. To also generate proofs
+and verify them after generation, override the container command:
 
 ```bash
 docker run --rm \
-  -v "$HOME/.zisk/provingKey:/provingKey:ro" \
+  -v "$HOME/.zisk:/root/.zisk" \
   zisk-arith-mul-repro \
-  bash -lc 'ZISK_REPRO_BAD_ARITH_MUL=1 RUST_LOG=info \
+  bash -lc 'set -eu; \
+    pk="$HOME/.zisk/provingKey"; \
+    [ -d "$pk" ] || ziskup --version 0.18.0 --provingkey --cpu -y; \
+    ZISK_REPRO_BAD_ARITH_MUL=1 RUST_LOG=info \
     ./target-docker/release/cargo-zisk prove \
       --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
       --emulator \
-      -k /provingKey \
+      -k "$pk" \
       --verify-proofs \
       -o /tmp/arith_bad_mul.proof'
 ```
