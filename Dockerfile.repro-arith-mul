@@ -14,8 +14,10 @@ ENV CUDA_ARCH=sm_120
 
 RUN apt-get update && apt-get install -y \
     curl \
+    wget \
     git \
     ca-certificates \
+    gnupg \
     build-essential \
     clang \
     libclang-dev \
@@ -40,16 +42,35 @@ RUN apt-get update && apt-get install -y \
     gcc-riscv64-unknown-elf \
     && rm -rf /var/lib/apt/lists/*
 
+# Node.js 20.x -- required by pil2-compiler and pil2-proofman-js to rebuild
+# the proving key from the patched PIL.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable
+
+# pil2 toolchain for rebuilding the proving key. Tags match
+# tools/test-env/.env for ZisK v0.18.0.
+WORKDIR /workspace
+RUN git clone --depth 1 --branch v0.9.0  https://github.com/0xPolygonHermez/pil2-compiler.git \
+ && git clone --depth 1 --branch v0.18.0 https://github.com/0xPolygonHermez/pil2-proofman.git \
+ && git clone --depth 1 --branch v0.17.0 https://github.com/0xPolygonHermez/pil2-proofman-js.git \
+ && (cd pil2-compiler    && rm -rf package-lock.json node_modules && npm install) \
+ && (cd pil2-proofman-js && rm -rf package-lock.json node_modules && npm install)
 
 WORKDIR /workspace/zisk
 RUN git config --global --add safe.directory '*'
 COPY . .
 
-# ZisK v0.18.0 links CUDA by default; `cpu-only` is the opt-out feature, so a
-# plain build (without it) is GPU-capable.
-RUN cargo build --release --bin cargo-zisk
+# GPU-capable cargo-zisk (ZisK v0.18.0 links CUDA by default; `cpu-only` is the
+# opt-out), plus the fixed-data generators the PIL rebuild needs.
+RUN cargo build --release \
+    --bin cargo-zisk \
+    --bin arith_frops_fixed_gen \
+    --bin binary_basic_frops_fixed_gen \
+    --bin binary_extension_frops_fixed_gen
 
 RUN mkdir -p /tmp/zisk-mul-edge \
     && riscv64-unknown-elf-gcc \

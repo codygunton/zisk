@@ -1,77 +1,97 @@
-# Arith MUL Malicious-Witness Repro
+# Arith MUL Malicious-Witness: Repro and Fix
 
 ## TL;DR
 
-**Stock ZisK accepts a proof that `-1 * 1 = 1`.** This branch demonstrates it.
+**Stock ZisK proves that `-1 * 1 = 1`.** This branch demonstrates the bug and
+fixes it.
 
-We do **not** change any circuit, constraint, or verifier code. The AIR
-constraints and the proof verifier are exactly stock ZisK. What we change is
-the *witness* — the trace values fed to the prover — because the witness is
-precisely what a malicious prover controls.
+The bug is in the Arith circuit: for a signed `MUL`, the constraints pin only
+the *magnitude* of the product, never its sign. A prover can therefore choose
+the sign of the result. Nothing in the verifier needs to change to exploit it
+— a malicious witness generator emits a trace claiming `MUL(-1, 1) = 1`, and
+the stock verifier accepts the resulting proof.
 
-ZisK's witness is built by a witness generator. An attacker forging a proof
-runs their own witness generator, so this repro simulates one: under an env
-flag it emits a trace claiming `MUL(-1, 1) = 1`. Stock ZisK's constraints then
-accept that trace — locally and globally — and `prove --verify-proofs`
-produces a proof that verifies.
+The fix is one constraint in `state-machines/arith/pil/arith.pil` that forces
+the product's sign bit to follow the operand signs.
 
-That acceptance is the bug, and it lives in the Arith circuit, not in our
-patch: the signed-multiplication constraints do not pin the result for this
-sign pattern. Because the repro makes no circuit changes, the verifier is the
-fixed reference point here — this branch only shows that the *unmodified*
-verifier will accept `-1 * 1 = 1`. The fix, when it comes, is also a circuit
-change; nothing in this repro needs to be undone in the verifier.
+Running the container walks through both:
 
-### Why two files are patched
+1. **stock circuit, malicious witness** — `prove --verify-proofs` produces a
+   proof of `MUL(-1,1) = 1` that verifies (the bug);
+2. **rebuild** the proving key from the patched PIL;
+3. **patched circuit** — the same malicious witness is now rejected, while the
+   honest `MUL(-1,1) = -1` still proves and verifies.
 
-A malicious prover cannot change one number in isolation. ZisK's Main and
-Arith state machines are linked by the operation bus, and the global
-permutation check forces the two sides to agree. A real attacker's witness
-generator must therefore produce a *self-consistent* malicious trace on both
-sides. The two env-gated patches — `core/src/zisk_ops.rs` (Main) and
-`state-machines/arith/src/arith_full.rs` (Arith) — are not two independent
-hacks; together they are one self-consistent malicious witness, the minimum
-needed to pass the global bus check. Patching only the Arith side fails global
-constraint #0 — that is the system working as intended.
+## The bug: two witnesses, one statement
 
-The repro is intentionally env-gated: normal execution is unchanged unless
-`ZISK_REPRO_BAD_ARITH_MUL=1` is set. This is a reproduction branch, not a
-proposed fix.
+The Arith circuit row for a `MUL` receives fixed inputs from the operation bus
+— `a`, `b`, `op` — and should *uniquely* determine the output columns: `c`
+(low 64 bits of the product), `d` (high 64 bits), and `np` (the product's sign
+bit). For `a = -1, b = 1` it does not. Both of these assignments satisfy every
+constraint in the stock Arith AIR:
 
-## What the patch changes
+| witness | `c` | `d` | `np` | encodes |
+|---|---|---|---|---|
+| honest    | `0xFFFF…FFFF` | `0xFFFF…FFFF` | `1` | product `-1` (correct) |
+| malicious | `1`           | `0`           | `0` | product `+1` (wrong)   |
 
-- `core/src/zisk_ops.rs`
-  - Under `ZISK_REPRO_BAD_ARITH_MUL=1`, Main computes
-    `op_mul(0xffffffffffffffff, 1) = 1`.
-  - This makes Main store the malicious result and assume that result on the
-    operation bus.
-- `state-machines/arith/src/arith_full.rs`
-  - Under the same env var, Arith emits a malformed row for `(MUL, -1, 1)`:
-    - `c = 1`
-    - `d = 0`
-    - `na = 1`
-    - `nb = 0`
-    - `np = 0`
-    - `nr = 0`
-    - `range_ab = 7`
-    - `range_cd = 1`
-    - `carry = [-1, -1, -1, -1, 0, 0, 0]`
-- `elf-regressions/arith_bad_mul/test.s`
-  - Minimal RV64 assembly input that executes `li t0, -1; li t1, 1; mul t2, t0, t1`.
+Main reads `c` as the MUL result, so the same instruction `mul t2,t0,t1` can be
+proven to yield `-1` or `1`.
 
-Main and Arith agree on the same bad operation-bus result, so the global bus
-permutation balances. The issue is that the Arith constraints do not force the
-signed multiplication result to be correct for this sign pattern.
+**Why both pass.** The Arith chunk equations reduce, for this case, to a single
+identity of the form `|a · b| = |result|` — they check the *magnitude* of the
+claimed result against the magnitude of the true product, with `np` acting as a
+sign selector. `np` is only ever cross-checked against the sign of `d`, and `d`
+is itself a free witness column. Nothing forces `np` to match the sign implied
+by the *operands*. Since `|-1| = |+1| = 1`, both signs pass.
+
+## The fix
+
+`state-machines/arith/pil/arith.pil` gains one constraint:
+
+```
+signed * (1 - div) * (np - (na + nb - 2 * na * nb)) === 0;
+```
+
+`na + nb - 2·na·nb` is `na XOR nb`. For a signed multiply the product is
+negative exactly when one operand is negative, so this forces
+`np = na XOR nb`. The selector `signed * (1 - div)` restricts it to signed
+64-bit multiplication (`mul`, `mulh`, `mulsuh`), and it adds no trace columns —
+so the same `cargo-zisk` binary drives both the stock and patched proving keys.
+
+With the constraint in place the malicious row is rejected (`na=1, nb=0` forces
+`np=1`, but the malicious witness has `np=0`), while the honest row (`np=1`)
+passes.
+
+**Scope.** The constraint assumes a nonzero product. A fully general fix also
+needs a zero-product guard (`a == 0` or `b == 0` ⟹ `np == 0`), which requires
+an extra witness column — out of scope for this demonstration branch.
+
+## The malicious witness
+
+The malicious witness is produced by an env-gated stand-in for a hostile
+witness generator. Under `ZISK_REPRO_BAD_ARITH_MUL=1`:
+
+- `core/src/zisk_ops.rs` — `op_mul` returns `1` for `(-1) * 1`, so Main stores
+  the malicious result and asserts it on the operation bus.
+- `state-machines/arith/src/arith_full.rs` — Arith emits the matching malformed
+  row (`c=1, d=0, np=0, …`).
+
+Both sides are patched because ZisK's Main and Arith state machines are linked
+by the operation bus, and the global permutation check forces them to agree:
+together they are one self-consistent malicious witness, the minimum needed to
+pass the global bus check. Normal execution is unchanged unless the env var is
+set.
+
+`elf-regressions/arith_bad_mul/test.s` is the RV64 input: `li t0,-1; li t1,1;
+mul t2,t0,t1`.
 
 ## Build and run
 
-The reproduction runs entirely through the branch Dockerfile, which builds a
-GPU-capable `cargo-zisk` and the tiny `MUL` ELF. See `Dockerfile.repro-arith-mul`
-for the exact build steps and dependencies.
-
-It requires an NVIDIA GPU and the NVIDIA Container Toolkit. The build targets
-compute capability `sm_120` (RTX 5090); change `CUDA_ARCH` in the Dockerfile
-for a different GPU.
+The demonstration runs entirely through the branch Dockerfile. It requires an
+NVIDIA GPU and the NVIDIA Container Toolkit; the build targets compute
+capability `sm_120` (RTX 5090) — change `CUDA_ARCH` in the Dockerfile for a
+different GPU.
 
 ```bash
 docker build -f Dockerfile.repro-arith-mul -t zisk-arith-mul-repro .
@@ -81,31 +101,31 @@ docker run --rm --gpus all \
   zisk-arith-mul-repro
 ```
 
-The `~/.zisk` mount is the canonical ZisK directory. If it does not already
-contain a `provingKey`, the container installs the stock v0.18.0 proving key
-into it with `ziskup`; if the key is already present, that step is skipped, so
-the (large) key is downloaded at most once and reused across runs.
+The container builds a GPU-capable `cargo-zisk`, the tiny `MUL` ELF, and the
+pil2 toolchain needed to recompile the circuit. `repro-arith-mul.sh` then runs
+three phases:
 
-The default container command runs `repro-arith-mul.sh`, which exercises the
-malicious witness through two clearly labelled steps:
+- **Phase 1** — stock proving key + malicious witness → `prove --verify-proofs`
+  generates a proof of `MUL(-1,1) = 1` that **verifies**.
+- **Phase 2** — recompile `zisk.pilout` from the patched `arith.pil` and
+  regenerate the proving key into `~/.zisk/provingKey-patched`. This is slow
+  (PIL compile + setup generation + GPU constant trees) and is cached, so it
+  runs at most once.
+- **Phase 3** — patched proving key + malicious witness → proof **rejected**;
+  patched proving key + honest witness → proof **verifies**.
 
-- **Step 1 — `verify-constraints`** (quick check): builds the execution trace
-  and checks every AIR and global constraint. No proof is produced.
-- **Step 2 — `prove --verify-proofs`** (full proof): generates a STARK proof
-  and runs the stock verifier on that proof.
-
-Both steps run with `ZISK_REPRO_BAD_ARITH_MUL=1`, so both operate on the
-malicious witness, and each prints the bad-row warning:
-
-```text
-WARN: injecting bad Arith MUL repro row: op=MUL a=0xffffffffffffffff b=1 c=1 d=0
-```
+The `~/.zisk` mount is the canonical ZisK directory. The stock v0.18.0 proving
+key is installed there by `ziskup` if absent, and the rebuilt patched key is
+cached alongside it; both are large, so the run reuses them across invocations.
 
 The script ends with an explicit summary:
 
 ```text
-Step 1  verify-constraints    : ACCEPTED  -- malicious trace passed all constraints
-Step 2  prove --verify-proofs  : VERIFIED  -- a proof of MUL(-1,1)=1 was generated and verified
+Phase 1   stock   circuit + malicious witness : VERIFIED
+Phase 3a  patched circuit + malicious witness : REJECTED (rc=...)
+Phase 3b  patched circuit + honest witness    : VERIFIED
 
-RESULT: BUG REPRODUCED -- stock ZisK accepted and proved MUL(-1, 1) = 1.
+RESULT: as expected -- the stock circuit proves MUL(-1,1) = 1, the
+        patched circuit rejects that malicious witness, and the honest
+        multiplication still proves and verifies.
 ```
