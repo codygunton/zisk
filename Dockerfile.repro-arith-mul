@@ -1,0 +1,70 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+ENV CARGO_TARGET_DIR=/workspace/zisk/target-docker
+ENV PATH=/root/.cargo/bin:$PATH
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    ca-certificates \
+    build-essential \
+    clang \
+    libclang-dev \
+    pkg-config \
+    cmake \
+    jq \
+    xz-utils \
+    libomp-dev \
+    libgmp-dev \
+    nlohmann-json3-dev \
+    protobuf-compiler \
+    uuid-dev \
+    libgrpc++-dev \
+    libsecp256k1-dev \
+    libsodium-dev \
+    libpqxx-dev \
+    nasm \
+    libopenmpi-dev \
+    openmpi-bin \
+    openmpi-common \
+    gcc-riscv64-unknown-elf \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable
+
+WORKDIR /workspace/zisk
+COPY . .
+
+RUN cargo build --release --bin cargo-zisk --features cpu-only
+
+RUN mkdir -p /tmp/zisk-mul-edge \
+    && riscv64-unknown-elf-gcc \
+        -march=rv64imac \
+        -mabi=lp64 \
+        -nostdlib \
+        -nostartfiles \
+        -static \
+        -Ttext=0x80000000 \
+        elf-regressions/arith_bad_mul/test.s \
+        -o /tmp/zisk-mul-edge/arith_bad_mul.elf
+
+CMD ["bash", "-lc", "set -eu; \
+    pk_path=\"${ZISK_REPRO_PK_PATH:-/provingKey}\"; \
+    if [ ! -e \"$pk_path\" ]; then \
+        echo \"missing proving key at $pk_path; mount one with: -v \\\"$HOME/.zisk/provingKey:/provingKey:ro\\\"\" >&2; \
+        exit 2; \
+    fi; \
+    echo \"== control verify-constraints ==\"; \
+    ./target-docker/release/cargo-zisk verify-constraints \
+        --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
+        --emulator \
+        -k \"$pk_path\"; \
+    echo \"== malicious verify-constraints ==\"; \
+    ZISK_REPRO_BAD_ARITH_MUL=1 RUST_LOG=info \
+    ./target-docker/release/cargo-zisk verify-constraints \
+        --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
+        --emulator \
+        -k \"$pk_path\""]

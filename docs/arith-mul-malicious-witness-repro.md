@@ -40,6 +40,24 @@ signed multiplication result to be correct for this sign pattern.
 
 ## Build
 
+The easiest reproduction path is the branch Dockerfile:
+
+```bash
+docker build \
+  -f Dockerfile.repro-arith-mul \
+  -t zisk-arith-mul-repro \
+  .
+
+docker run --rm \
+  -v "$HOME/.zisk/provingKey:/provingKey:ro" \
+  zisk-arith-mul-repro
+```
+
+That default container run performs both the control
+`verify-constraints --emulator` run and the malicious env-gated
+`verify-constraints --emulator` run. The malicious run is expected to print
+the bad-row warning below and still accept all local and global constraints.
+
 On Ubuntu 24.04 with ZisK's usual native dependencies:
 
 ```bash
@@ -125,3 +143,29 @@ In the original investigation, patching only Arith caused the Arith instance
 to pass but global constraint #0 to fail. This branch patches Main as well,
 which demonstrates that the global operation-bus check links Main and Arith
 but does not make the Arith signed multiplication relation sound.
+
+## Full proof verifier
+
+The command above verifies the AIR and global constraints for the generated
+execution trace. To also ask ZisK to generate proofs and verify them after
+generation, override the container command:
+
+```bash
+docker run --rm \
+  -v "$HOME/.zisk/provingKey:/provingKey:ro" \
+  zisk-arith-mul-repro \
+  bash -lc 'ZISK_REPRO_BAD_ARITH_MUL=1 RUST_LOG=info \
+    ./target-docker/release/cargo-zisk prove \
+      --elf /tmp/zisk-mul-edge/arith_bad_mul.elf \
+      --emulator \
+      -k /provingKey \
+      --verify-proofs \
+      -o /tmp/arith_bad_mul.proof'
+```
+
+Observed result on this branch: the malicious proof path also accepts. The run
+prints the bad-row warning during proof generation and then logs:
+
+```text
+✓ Vadcop Final proof was verified
+```
