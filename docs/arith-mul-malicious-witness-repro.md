@@ -2,23 +2,13 @@
 
 ## TL;DR
 
-**Stock ZisK proves that `-1 * 1 = 1`.** This branch demonstrates the bug and
-fixes it.
+One can prove for execution of an ELF file that `-1 * 1 = 1` for the standard 64-but insigned MUL. This branch demonstrates the bug and fixes it. The fix is one constraint in `state-machines/arith/pil/arith.pil`
 
-The bug is in the Arith circuit: for a signed `MUL`, the constraints pin only
-the *magnitude* of the product, never its sign. A prover can therefore choose
-the sign of the result. Nothing in the verifier needs to change to exploit it
-— a malicious witness generator emits a trace claiming `MUL(-1, 1) = 1`, and
-the stock verifier accepts the resulting proof.
-
-The fix is one constraint in `state-machines/arith/pil/arith.pil` that forces
-the product's sign bit to follow the operand signs.
-
-Running the container walks through both:
+Running the container walks through:
 
 1. **stock circuit, malicious witness** — `prove --verify-proofs` produces a
    proof of `MUL(-1,1) = 1` that verifies (the bug);
-2. **rebuild** the proving key from the patched PIL;
+2. **rebuild** the proving key from the patched PIL (warning, very slow)
 3. **patched circuit** — the same malicious witness is now rejected, while the
    honest `MUL(-1,1) = -1` still proves and verifies.
 
@@ -30,10 +20,10 @@ The Arith circuit row for a `MUL` receives fixed inputs from the operation bus
 bit). For `a = -1, b = 1` it does not. Both of these assignments satisfy every
 constraint in the stock Arith AIR:
 
-| witness | `c` | `d` | `np` | encodes |
-|---|---|---|---|---|
-| honest    | `0xFFFF…FFFF` | `0xFFFF…FFFF` | `1` | product `-1` (correct) |
-| malicious | `1`           | `0`           | `0` | product `+1` (wrong)   |
+| witness   | `c`           | `d`           | `np` | encodes                |
+|-----------|---------------|---------------|------|------------------------|
+| honest    | `0xFFFF…FFFF` | `0xFFFF…FFFF` | `1`  | product `-1` (correct) |
+| malicious | `1`           | `0`           | `0`  | product `+1` (wrong)   |
 
 Main reads `c` as the MUL result, so the same instruction `mul t2,t0,t1` can be
 proven to yield `-1` or `1`.
