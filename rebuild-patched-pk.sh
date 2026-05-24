@@ -8,10 +8,12 @@
 # goes to ~/.zisk/provingKey-patched; the stock ~/.zisk/provingKey is left
 # untouched.
 #
-# Only the *basic* per-AIR setup is generated -- not the recursive/aggregation
-# setup (`-r`). That basic setup is everything `verify-constraints` needs (it
-# evaluates every AIR's local constraints plus the global constraints), and it
-# rebuilds in minutes rather than the hours a full recursive setup takes.
+# Full setup, including the recursive/aggregation circuits and GPU constant
+# trees, so the patched key supports full `prove --verify-proofs --gpu`. This
+# is slow -- the recursive setup compiles a circom verifier per AIR.
+#
+# Mirrors the steps of tools/test-env/build_setup.sh. Versions of the pil2
+# toolchain are pinned in Dockerfile.repro-arith-mul (tools/test-env/.env).
 #
 set -euo pipefail
 
@@ -20,6 +22,7 @@ std_pil=/workspace/pil2-proofman/pil2-components/lib/std/pil
 pil_compiler=/workspace/pil2-compiler/src/pil.js
 proofman_js=/workspace/pil2-proofman-js/src/main_setup.js
 patched_pk="${HOME}/.zisk/provingKey-patched"
+cargo_zisk="${zisk}/target-docker/release/cargo-zisk"
 
 cd "$zisk"
 
@@ -34,16 +37,21 @@ node --max-old-space-size=16384 "$pil_compiler" pil/zisk.pil \
     -I pil,"$std_pil",state-machines,precompiles \
     -o pil/zisk.pilout -u tmp/fixed -O fixed-to-file
 
-echo "[rebuild] generating basic setup (no recursive setup)..."
+echo "[rebuild] generating setup (basic + recursive)..."
 rm -rf build/provingKey
 node --max-old-space-size=16384 --stack-size=8192 "$proofman_js" \
     -a ./pil/zisk.pilout -b build \
-    -u tmp/fixed \
+    -u tmp/fixed -t "$std_pil" -r \
     -s state-machines/starkstructs.json
 
-echo "[rebuild] installing patched proving key -> ${patched_pk}"
+echo "[rebuild] staging proving key at ${patched_pk}.tmp"
 rm -rf "$patched_pk" "${patched_pk}.tmp"
 cp -R build/provingKey "${patched_pk}.tmp"
+
+echo "[rebuild] generating GPU constant trees..."
+"$cargo_zisk" check-setup -k "${patched_pk}.tmp" --gpu
+
+echo "[rebuild] installing patched proving key -> ${patched_pk}"
 mv "${patched_pk}.tmp" "$patched_pk"
 
 echo "[rebuild] done."

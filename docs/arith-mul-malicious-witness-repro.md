@@ -40,22 +40,29 @@ by the *operands*. Since `|-1| = |+1| = 1`, both signs pass.
 `state-machines/arith/pil/arith.pil` gains one constraint:
 
 ```
-signed * (1 - div) * (np - (na + nb - 2 * na * nb)) === 0;
+signed * (1 - div) * (np - (na + nb - 2 * na * nb))
+                   * (c[0] + c[1] + c[2] + c[3] + d[0] + d[1] + d[2] + d[3]) === 0;
 ```
 
 `na + nb - 2·na·nb` is `na XOR nb`. For a signed multiply the product is
 negative exactly when one operand is negative, so this forces
 `np = na XOR nb`. The selector `signed * (1 - div)` restricts it to signed
-64-bit multiplication (`mul`, `mulh`, `mulsuh`), and it adds no trace columns —
-so the same `cargo-zisk` binary drives both the stock and patched proving keys.
+64-bit multiplication (`mul`, `mulh`, `mulsuh`).
 
-With the constraint in place the malicious row is rejected (`na=1, nb=0` forces
-`np=1`, but the malicious witness has `np=0`), while the honest row (`np=1`)
-passes.
+The trailing factor `c[0]+…+d[3]` is the sum of the eight 16-bit limbs of the
+result. Each limb is non-negative, so the sum is zero iff every limb is zero
+iff the true product is zero. Multiplying by that sum makes the constraint
+vacuous on zero products, where forcing `np = na XOR nb` would be wrong (e.g.
+`0 * (-5)`: `na=0, nb=1, na XOR nb = 1`, but the true product is `0` whose
+sign bit is `0`). For zero products, the existing `arith_table` lookup
+already pins `np = sign(d3) = 0`, so `np` remains correctly fixed.
 
-**Scope.** The constraint assumes a nonzero product. A fully general fix also
-needs a zero-product guard (`a == 0` or `b == 0` ⟹ `np == 0`), which requires
-an extra witness column — out of scope for this demonstration branch.
+It adds no trace columns, so the same `cargo-zisk` binary drives both the
+stock and patched proving keys.
+
+With the constraint in place the malicious row is rejected (`na=1, nb=0` and a
+nonzero limb sum force `np=1`, but the malicious witness has `np=0`), while
+the honest row (`np=1`) passes.
 
 ## The malicious witness
 
@@ -98,20 +105,17 @@ three phases:
 - **Phase 1** — stock proving key + malicious witness → `prove --verify-proofs`
   generates a full STARK proof of `MUL(-1,1) = 1` that **verifies**.
 - **Phase 2** — recompile `zisk.pilout` from the patched `arith.pil` and
-  regenerate the basic setup into `~/.zisk/provingKey-patched`. Cached, so it
-  runs at most once.
-- **Phase 3** — patched proving key + malicious witness → `verify-constraints`
-  **rejects** it; patched proving key + honest witness → `verify-constraints`
-  **passes**.
+  regenerate the full proving key into `~/.zisk/provingKey-patched`. Slow
+  (PIL compile + basic setup + recursive/aggregation setup + GPU constant
+  trees, ~2 hours), and cached -- runs at most once per host.
+- **Phase 3** — patched proving key + malicious witness → `prove --verify-proofs`
+  **rejects** it; patched proving key + honest witness → `prove --verify-proofs`
+  **verifies**.
 
-Phase 3 uses `verify-constraints` rather than `prove`: it evaluates every AIR's
-local constraints and all global constraints (including the Main↔Arith
-operation-bus permutation) directly on the trace — the same constraint system a
-proof commits to. The patched Arith constraint is local, so the malicious row
-is rejected there. Generating a full proof would additionally require rebuilding
-ZisK's recursive/aggregation setup, which takes hours and adds nothing to the
-constraint demonstration; the basic setup Phase 2 produces is all
-`verify-constraints` needs.
+Every phase exercises the full proving pipeline (basic per-AIR proofs
+aggregated up to a vadcop final proof). The patched Arith constraint is a
+local AIR constraint, so a malicious Arith row makes basic proof generation
+fail; the run reports a non-zero exit, which the script records as REJECTED.
 
 The `~/.zisk` mount is the canonical ZisK directory. The stock v0.18.0 proving
 key is installed there by `ziskup` if absent, and the rebuilt patched key is

@@ -233,10 +233,18 @@ airtemplate Arith(const int N = 2**18) {
     //
     // Forcing np to follow the operand signs (np = na XOR nb) removes the
     // malicious solution. Selector signed*(1-div) = {mul, mulh, mulsuh}.
-    // NOTE: this assumes a nonzero product; a fully general fix also needs a
-    // zero-product guard (a == 0 or b == 0 => np == 0).
+    //
+    // Zero-product case: when the true product is zero (a == 0 or b == 0),
+    // every c[i] and d[i] is zero too. Since the limbs are non-negative
+    // 16-bit values, the limb sum is zero iff every limb is zero iff the
+    // product is zero. So multiplying the np constraint by that sum makes
+    // it vanish exactly on zero products -- np is then unconstrained by this
+    // line, but the existing arith_table lookup already pins np = sign(d3),
+    // and d == 0 forces sign(d3) = 0, so np is still correctly fixed at 0.
+    // For nonzero products the limb sum is nonzero and forces np = na XOR nb.
     // ------------------------------------------------------------------
-    signed * (1 - div) * (np - (na + nb - 2 * na * nb)) === 0;
+    signed * (1 - div) * (np - (na + nb - 2 * na * nb))
+                       * (c[0] + c[1] + c[2] + c[3] + d[0] + d[1] + d[2] + d[3]) === 0;
 
     col witness bits(8) op;
 
