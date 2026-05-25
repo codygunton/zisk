@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-One can prove for execution of an ELF file that `-1 * 1 = 1` for the standard 64-but insigned MUL. This branch demonstrates the bug and fixes it. The fix is one constraint in `state-machines/arith/pil/arith.pil`
+One can prove `-1 * 1 = 1` for the standard 64-bit unsigned MUL. This branch demonstrates the bug and fixes it. The fix is one constraint in `state-machines/arith/pil/arith.pil`
 
 Running the container walks through:
 
@@ -12,7 +12,15 @@ Running the container walks through:
 3. **patched circuit** — the same malicious witness is now rejected, while the
    honest `MUL(-1,1) = -1` still proves and verifies.
 
-## The bug: two witnesses, one statement
+## Changes in this branch
+
+- `state-machines/arith/pil/arith.pil` — **the fix**: one new constraint forcing the product sign for signed MUL.
+- `core/src/zisk_ops.rs` — env-gated malicious Main: `op_mul` returns `1` for `(-1)·1`.
+- `state-machines/arith/src/arith_full.rs` — env-gated malicious Arith generator: emits the matching `c=1, d=0, np=0` row.
+- `elf-regressions/arith_bad_mul/test.s` — minimal RV64 ELF input: `li t0,-1; li t1,1; mul t2,t0,t1`.
+- `Dockerfile.repro-arith-mul`, `repro-arith-mul.sh`, `rebuild-patched-pk.sh` — container, three-phase driver, patched-pk rebuilder.
+
+## The bug and its exploit
 
 The Arith circuit row for a `MUL` receives fixed inputs from the operation bus
 — `a`, `b`, `op` — and should *uniquely* determine the output columns: `c`
@@ -35,6 +43,25 @@ sign selector. `np` is only ever cross-checked against the sign of `d`, and `d`
 is itself a free witness column. Nothing forces `np` to match the sign implied
 by the *operands*. Since `|-1| = |+1| = 1`, both signs pass.
 
+**Exploiting it.** A real attacker controls the witness generator; we simulate
+one with an env gate. Under `ZISK_REPRO_BAD_ARITH_MUL=1`:
+
+- `core/src/zisk_ops.rs` — `op_mul` returns `1` for `(-1) * 1`, so Main stores
+  the malicious result and asserts it on the operation bus.
+- `state-machines/arith/src/arith_full.rs` — Arith emits the matching malformed
+  row (`c=1, d=0, np=0, …`).
+
+Both sides are patched because Main and Arith are linked by the operation bus,
+and the global permutation check forces them to agree: together they form one
+self-consistent malicious witness, the minimum needed to pass the global bus
+check. Normal execution is unchanged unless the env var is set. The input ELF
+`elf-regressions/arith_bad_mul/test.s` is a stock RV64 program — `li t0,-1; li
+t1,1; mul t2,t0,t1` — followed by two `sw` writes that commit `t2`'s two
+halves to ZisK's public-output region (`OUTPUT_ADDR = 0xa001_0000`, the same
+slots `ziskos::set_output` uses). That puts the value the proof attests to
+into the publics, so the prove summary prints it. No special opcodes or
+instrumentation; the writes are ordinary stores to a memory-mapped region.
+
 ## The fix
 
 `state-machines/arith/pil/arith.pil` gains one constraint:
@@ -50,12 +77,18 @@ negative exactly when one operand is negative, so this forces
 64-bit multiplication (`mul`, `mulh`, `mulsuh`).
 
 The trailing factor `c[0]+…+d[3]` is the sum of the eight 16-bit limbs of the
-result. Each limb is non-negative, so the sum is zero iff every limb is zero
-iff the true product is zero. Multiplying by that sum makes the constraint
-vacuous on zero products, where forcing `np = na XOR nb` would be wrong (e.g.
-`0 * (-5)`: `na=0, nb=1, na XOR nb = 1`, but the true product is `0` whose
-sign bit is `0`). For zero products, the existing `arith_table` lookup
-already pins `np = sign(d3) = 0`, so `np` remains correctly fixed.
+result, and is zero in the Goldilocks field iff every limb is zero iff the
+true product is zero. The "iff" needs justifying because field arithmetic can
+wrap: but each limb is range-checked to a 16-bit unsigned value (`[0, 2¹⁶)`),
+so the integer sum is at most `8 · (2¹⁶ − 1) < 2¹⁹`, far below the Goldilocks
+modulus `p ≈ 2⁶⁴`. No wraparound — the sum as a field element equals the sum
+as a non-negative integer, so it vanishes only when every limb does.
+
+Multiplying by that sum makes the constraint vacuous on zero products, where
+forcing `np = na XOR nb` would be wrong (e.g. `0 * (-5)`: `na=0, nb=1,
+na XOR nb = 1`, but the true product is `0` whose sign bit is `0`). For zero
+products, the existing `arith_table` lookup already pins `np = sign(d3) = 0`,
+so `np` remains correctly fixed.
 
 It adds no trace columns, so the same `cargo-zisk` binary drives both the
 stock and patched proving keys.
@@ -63,25 +96,6 @@ stock and patched proving keys.
 With the constraint in place the malicious row is rejected (`na=1, nb=0` and a
 nonzero limb sum force `np=1`, but the malicious witness has `np=0`), while
 the honest row (`np=1`) passes.
-
-## The malicious witness
-
-The malicious witness is produced by an env-gated stand-in for a hostile
-witness generator. Under `ZISK_REPRO_BAD_ARITH_MUL=1`:
-
-- `core/src/zisk_ops.rs` — `op_mul` returns `1` for `(-1) * 1`, so Main stores
-  the malicious result and asserts it on the operation bus.
-- `state-machines/arith/src/arith_full.rs` — Arith emits the matching malformed
-  row (`c=1, d=0, np=0, …`).
-
-Both sides are patched because ZisK's Main and Arith state machines are linked
-by the operation bus, and the global permutation check forces them to agree:
-together they are one self-consistent malicious witness, the minimum needed to
-pass the global bus check. Normal execution is unchanged unless the env var is
-set.
-
-`elf-regressions/arith_bad_mul/test.s` is the RV64 input: `li t0,-1; li t1,1;
-mul t2,t0,t1`.
 
 ## Build and run
 
@@ -120,6 +134,20 @@ fail; the run reports a non-zero exit, which the script records as REJECTED.
 The `~/.zisk` mount is the canonical ZisK directory. The stock v0.18.0 proving
 key is installed there by `ziskup` if absent, and the rebuilt patched key is
 cached alongside it; both are large, so the run reuses them across invocations.
+
+Each successful prove prints the proof's public outputs, so the committed
+value of `t2` is visible directly in the log:
+
+```text
+# Phase 1 (stock, malicious):
+Public outputs[0..8]: 0x00000001 0x00000000 ...    # t2 = 1   (wrong, but verifies)
+
+# Phase 3b (patched, honest):
+Public outputs[0..8]: 0xffffffff 0xffffffff ...    # t2 = -1  (correct, verifies)
+```
+
+Same ELF, same verifier, two distinct verifying proofs publicly committing to
+two different values of `t2`. That contradiction is the soundness break.
 
 The script ends with an explicit summary:
 
