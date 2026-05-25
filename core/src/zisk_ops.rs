@@ -918,12 +918,12 @@ pub fn opc_mulu(ctx: &mut InstContext) {
 /// Sets c to a x b, as 64-bits signed values, and flag to false
 #[inline(always)]
 pub fn op_mul(a: u64, b: u64) -> (u64, bool) {
-    // REPRO (ZISK_REPRO_BAD_ARITH_MUL): stand in for a malicious witness
-    // generator. For the signed product (-1) * 1 it claims the low 64-bit
-    // result is 1 instead of the correct 0xffff_ffff_ffff_ffff. The returned
-    // tuple is (result, flag); MUL never sets the flag, so we still return
-    // `false` here -- the injected value differs from an honest MUL only in
-    // the result, keeping the lie minimal and consistent with the opcode.
+    // For the signed product (-1) * 1 returns 1 instead of the correct 0xffff_ffff_ffff_ffff. The
+    // returned tuple is (result, flag); `flag` is the per-instruction boolean output every Zisk op
+    // produces alongside its 64-bit result (consumed downstream e.g. by conditional control flow --
+    // comparisons set it from the comparison outcome, etc.). MUL never sets it, so we still return
+    // `false` here -- the injected value differs from an honest MUL only in the result, keeping the
+    // lie minimal and consistent with the opcode.
     if std::env::var_os(REPRO_BAD_ARITH_MUL_ENV).is_some() && a == u64::MAX && b == 1 {
         return (1, false);
     }
