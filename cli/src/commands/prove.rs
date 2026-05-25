@@ -236,16 +236,6 @@ impl ZiskProve {
             result.save_proof(&output_file)?;
             info!("Proof Time: {:.3} seconds", result.get_proving_time() as f64 / 1000.0);
 
-            // Print the first 8 public-output slots so the prove log shows what
-            // the proof commits to (each slot is a u32 widened to u64).
-            let publics = result.get_publics().public_u64();
-            let head: Vec<String> = publics
-                .iter()
-                .take(8)
-                .map(|v| format!("0x{:08x}", v))
-                .collect();
-            info!("Public outputs[0..8]: {}", head.join(" "));
-
             print_execution_summary(
                 &executor_time,
                 result.get_proving_time(),

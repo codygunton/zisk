@@ -27,7 +27,7 @@ The containerized repro runs:
 - `state-machines/arith/src/arith_full.rs` - env-gated malicious Arith witness:
   emits the matching `c=1, d=0, np=0` row.
 - `elf-regressions/arith_bad_mul/test.s` - tiny RV64 program:
-  `li t0,-1; li t1,1; mul t2,t0,t1`, then stores `t2` into public outputs.
+  `li t0,-1; li t1,1; mul t2,t0,t1`, then exits.
 - `Dockerfile.repro-arith-mul`, `repro-arith-mul.sh`,
   `rebuild-patched-pk.sh` - GPU repro environment, driver, and patched proving
   key builder.
@@ -64,11 +64,6 @@ Both Main and Arith are patched in the repro because the operation bus requires
 them to agree. Main emits `c=1` on the bus, and Arith proves the matching bad
 row. That is the minimum self-consistent malicious witness needed to pass the
 global bus check.
-
-The ELF commits the result to public outputs with ordinary stores to
-`OUTPUT_ADDR = 0xa001_0000`, the same region used by `ziskos::set_output`.
-Successful prove logs print the first public slots, so the proved value is
-visible.
 
 ## Proposed Fix
 
@@ -131,15 +126,5 @@ Phase 3a  patched circuit + malicious  (verify-constraints): REJECTED (rc=...)
 Phase 3b  patched circuit + honest     (verify-constraints): PASSED
 ```
 
-Expected public outputs:
-
-```text
-# Phase 1: stock circuit + malicious witness
-Public outputs[0..8]: 0x00000001 0x00000000 ...    # t2 = 1
-
-# Phase 3b: patched circuit + honest witness
-Public outputs[0..8]: 0xffffffff 0xffffffff ...    # t2 = -1
-```
-
-The stock circuit verifies the wrong public output. The patched Arith
+The stock circuit accepts the wrong multiplication result. The patched Arith
 constraints reject that bad witness while preserving the honest one.
