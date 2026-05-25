@@ -222,7 +222,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         let b = OperationBusData::get_b(&input_data);
 
         aop.calculate(opcode, a, b);
-        Self::maybe_inject_bad_mul_repro(aop, opcode, a, b);
+        Self::maybe_inject_bad_mul_repro(aop, opcode, a, b); // maybe overwrite default values
         let mut row = R::default();
         for i in [0, 2] {
             row.set_a(i, aop.a[i] as u16);
@@ -353,7 +353,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         aop.b = [1, 0, 0, 0]; // operand b = 1, as 16-bit limbs (honest)
         aop.c = [1, 0, 0, 0]; // THE LIE: low 64 bits of product = 1 (honest: all-ones)
         aop.d = [0, 0, 0, 0]; // THE LIE: high 64 bits of product = 0 (honest: all-ones)
-        // inter-limb carries, crafted so the chunk equation still balances with the lie
+                              // inter-limb carries, crafted so the chunk equation still balances with the lie
         aop.carry = [-1, -1, -1, -1, 0, 0, 0];
         aop.m32 = false; // 64-bit op, not a 32-bit *W variant
         aop.div = false; // multiplication, not division
