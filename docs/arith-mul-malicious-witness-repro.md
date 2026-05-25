@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-One can prove `-1 * 1 = 1` for the standard 64-bit unsigned MUL. This branch demonstrates the bug and fixes it. The fix is one constraint in `state-machines/arith/pil/arith.pil`
+One can prove `-1 * 1 = 1` for ZisK's 64-bit `mul` operation. This branch demonstrates the bug and fixes it. The fix is one constraint in `state-machines/arith/pil/arith.pil`
 
 Running the container walks through:
 
