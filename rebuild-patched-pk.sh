@@ -8,9 +8,11 @@
 # goes to ~/.zisk/provingKey-patched; the stock ~/.zisk/provingKey is left
 # untouched.
 #
-# Full setup, including the recursive/aggregation circuits and GPU constant
-# trees, so the patched key supports full `prove --verify-proofs --gpu`. This
-# is slow -- the recursive setup compiles a circom verifier per AIR.
+# Only the basic per-AIR setup is generated, not the recursive/aggregation
+# setup (`-r`). That is enough for GPU-backed `verify-constraints`, which is
+# what the repro uses for the patched circuit. The proposed fix compiles as a
+# degree-5 Arith constraint, and the recursive proof path is intentionally left
+# for the ZisK team to review rather than treated as part of this repro.
 #
 # Mirrors the steps of tools/test-env/build_setup.sh. Versions of the pil2
 # toolchain are pinned in Dockerfile.repro-arith-mul (tools/test-env/.env).
@@ -22,7 +24,6 @@ std_pil=/workspace/pil2-proofman/pil2-components/lib/std/pil
 pil_compiler=/workspace/pil2-compiler/src/pil.js
 proofman_js=/workspace/pil2-proofman-js/src/main_setup.js
 patched_pk="${HOME}/.zisk/provingKey-patched"
-cargo_zisk="${zisk}/target-docker/release/cargo-zisk"
 
 cd "$zisk"
 
@@ -37,21 +38,16 @@ node --max-old-space-size=16384 "$pil_compiler" pil/zisk.pil \
     -I pil,"$std_pil",state-machines,precompiles \
     -o pil/zisk.pilout -u tmp/fixed -O fixed-to-file
 
-echo "[rebuild] generating setup (basic + recursive)..."
+echo "[rebuild] generating basic setup (no recursive setup)..."
 rm -rf build/provingKey
 node --max-old-space-size=16384 --stack-size=8192 "$proofman_js" \
     -a ./pil/zisk.pilout -b build \
-    -u tmp/fixed -t "$std_pil" -r \
+    -u tmp/fixed \
     -s state-machines/starkstructs.json
 
-echo "[rebuild] staging proving key at ${patched_pk}.tmp"
+echo "[rebuild] installing patched proving key -> ${patched_pk}"
 rm -rf "$patched_pk" "${patched_pk}.tmp"
 cp -R build/provingKey "${patched_pk}.tmp"
-
-echo "[rebuild] generating GPU constant trees..."
-"$cargo_zisk" check-setup -k "${patched_pk}.tmp" --gpu
-
-echo "[rebuild] installing patched proving key -> ${patched_pk}"
 mv "${patched_pk}.tmp" "$patched_pk"
 
 echo "[rebuild] done."

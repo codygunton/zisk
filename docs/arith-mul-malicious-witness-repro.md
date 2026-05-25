@@ -8,14 +8,15 @@ correct result `-1`.
 
 The branch also carries a minimal proposed fix in
 `state-machines/arith/pil/arith.pil`. The fix adds no trace columns, but the
-new constraint compiles as degree 5 in the Arith AIR, which I think is unacceptable.
+new constraint compiles as degree 5 in the Arith AIR and should get upstream
+review before being treated as a final patch.
 
 The containerized repro runs:
 
 1. stock circuit + malicious witness -> `MUL(-1,1) = 1` verifies;
 2. rebuild proving key from the patched PIL;
-3. patched circuit + malicious witness -> rejected;
-4. patched circuit + honest witness -> verifies.
+3. patched circuit + malicious witness -> constraints rejected;
+4. patched circuit + honest witness -> constraints pass.
 
 ## Branch Contents
 
@@ -115,16 +116,19 @@ docker run --rm --gpus all \
 
 The script installs the stock v0.18.0 proving key if needed, rebuilds the
 patched proving key into `~/.zisk/provingKey-patched`, and caches both across
-runs. The patched setup is slow because it recompiles `zisk.pilout`, regenerates
-the proving key, builds recursive/aggregation setup, and generates GPU constant
-trees.
+runs. The patched setup recompiles `zisk.pilout` and regenerates the basic
+per-AIR proving key, but intentionally does not build recursive/aggregation
+setup or GPU constant trees. The patched phases use GPU-backed
+`verify-constraints` because the proposed constraint currently compiles as
+degree 5; whether and how that belongs in the recursive proof path should be
+reviewed by the ZisK team.
 
 Expected summary:
 
 ```text
-Phase 1   stock   circuit + malicious witness : VERIFIED
-Phase 3a  patched circuit + malicious witness : REJECTED (rc=...)
-Phase 3b  patched circuit + honest witness    : VERIFIED
+Phase 1   stock   circuit + malicious  (prove)             : VERIFIED
+Phase 3a  patched circuit + malicious  (verify-constraints): REJECTED (rc=...)
+Phase 3b  patched circuit + honest     (verify-constraints): PASSED
 ```
 
 Expected public outputs:
@@ -137,5 +141,5 @@ Public outputs[0..8]: 0x00000001 0x00000000 ...    # t2 = 1
 Public outputs[0..8]: 0xffffffff 0xffffffff ...    # t2 = -1
 ```
 
-The stock circuit verifies the wrong public output. The patched circuit rejects
-that bad witness while preserving the honest one.
+The stock circuit verifies the wrong public output. The patched Arith
+constraints reject that bad witness while preserving the honest one.
