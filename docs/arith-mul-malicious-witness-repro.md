@@ -1,108 +1,110 @@
-# Arith MUL Malicious-Witness: Repro and Fix
+# Arith MUL Malicious-Witness Repro
 
-## TL;DR
+## Summary
 
-One can prove `-1 * 1 = 1` for ZisK's 64-bit `mul` operation. This branch demonstrates the bug and fixes it. The fix is one constraint in `state-machines/arith/pil/arith.pil`
+This branch demonstrates a soundness bug in ZisK's 64-bit `mul` operation: the
+stock circuit can prove the same program with `MUL(-1, 1) = 1` instead of the
+correct result `-1`.
 
-Running the container walks through:
+The branch also carries a minimal proposed fix in
+`state-machines/arith/pil/arith.pil`. The fix adds no trace columns, but the
+new constraint compiles as degree 5 in the Arith AIR; that degree/performance
+tradeoff should be reviewed by the ZisK team before merging.
 
-1. **stock circuit, malicious witness** — `prove --verify-proofs` produces a
-   proof of `MUL(-1,1) = 1` that verifies (the bug);
-2. **rebuild** the proving key from the patched PIL (warning, very slow)
-3. **patched circuit** — the same malicious witness is now rejected, while the
-   honest `MUL(-1,1) = -1` still proves and verifies.
+The containerized repro runs:
 
-## Changes in this branch
+1. stock circuit + malicious witness -> `MUL(-1,1) = 1` verifies;
+2. rebuild proving key from the patched PIL;
+3. patched circuit + malicious witness -> rejected;
+4. patched circuit + honest witness -> verifies.
 
-- `state-machines/arith/pil/arith.pil` — **the fix**: one new constraint forcing the product sign for signed MUL.
-- `core/src/zisk_ops.rs` — env-gated malicious Main: `op_mul` returns `1` for `(-1)·1`.
-- `state-machines/arith/src/arith_full.rs` — env-gated malicious Arith generator: emits the matching `c=1, d=0, np=0` row.
-- `elf-regressions/arith_bad_mul/test.s` — minimal RV64 ELF input: `li t0,-1; li t1,1; mul t2,t0,t1`.
-- `Dockerfile.repro-arith-mul`, `repro-arith-mul.sh`, `rebuild-patched-pk.sh` — container, three-phase driver, patched-pk rebuilder.
+## Branch Contents
 
-## The bug and its exploit
+- `state-machines/arith/pil/arith.pil` - proposed constraint tying the signed
+  product sign to operand signs.
+- `core/src/zisk_ops.rs` - env-gated malicious Main witness: `op_mul(-1, 1)`
+  returns `1`.
+- `state-machines/arith/src/arith_full.rs` - env-gated malicious Arith witness:
+  emits the matching `c=1, d=0, np=0` row.
+- `elf-regressions/arith_bad_mul/test.s` - tiny RV64 program:
+  `li t0,-1; li t1,1; mul t2,t0,t1`, then stores `t2` into public outputs.
+- `Dockerfile.repro-arith-mul`, `repro-arith-mul.sh`,
+  `rebuild-patched-pk.sh` - GPU repro environment, driver, and patched proving
+  key builder.
 
-The Arith circuit row for a `MUL` receives fixed inputs from the operation bus
-— `a`, `b`, `op` — and should *uniquely* determine the output columns: `c`
-(low 64 bits of the product), `d` (high 64 bits), and `np` (the product's sign
-bit). For `a = -1, b = 1` it does not. Both of these assignments satisfy every
-constraint in the stock Arith AIR:
+The env-gated code is repro scaffolding. It simulates a malicious prover
+choosing an invalid witness while leaving normal execution unchanged unless
+`ZISK_REPRO_BAD_ARITH_MUL` is set.
 
-| witness   | `c`           | `d`           | `np` | encodes                |
-|-----------|---------------|---------------|------|------------------------|
-| honest    | `0xFFFF…FFFF` | `0xFFFF…FFFF` | `1`  | product `-1` (correct) |
-| malicious | `1`           | `0`           | `0`  | product `+1` (wrong)   |
+## Bug
 
-Main reads `c` as the MUL result, so the same instruction `mul t2,t0,t1` can be
-proven to yield `-1` or `1`.
+For an Arith `MUL` row, the operation bus fixes `op`, `a`, and `b`; the row
+should then uniquely determine:
 
-**Why both pass.** The Arith chunk equations reduce, for this case, to a single
-identity of the form `|a · b| = |result|` — they check the *magnitude* of the
-claimed result against the magnitude of the true product, with `np` acting as a
-sign selector. `np` is only ever cross-checked against the sign of `d`, and `d`
-is itself a free witness column. Nothing forces `np` to match the sign implied
-by the *operands*. Since `|-1| = |+1| = 1`, both signs pass.
+- `c`: low 64 bits of the product;
+- `d`: high 64 bits of the product;
+- `np`: sign bit used by the Arith equations for the product.
 
-**Exploiting it.** A real attacker controls the witness generator; we simulate
-one with an env gate. Under `ZISK_REPRO_BAD_ARITH_MUL=1`:
+For `a = -1`, `b = 1`, the stock Arith AIR accepts both rows:
 
-- `core/src/zisk_ops.rs` — `op_mul` returns `1` for `(-1) * 1`, so Main stores
-  the malicious result and asserts it on the operation bus.
-- `state-machines/arith/src/arith_full.rs` — Arith emits the matching malformed
-  row (`c=1, d=0, np=0, …`).
+| witness   | `c`           | `d`           | `np` | product encoded |
+|-----------|---------------|---------------|------|-----------------|
+| honest    | `0xffff..ffff` | `0xffff..ffff` | `1`  | `-1`            |
+| malicious | `1`           | `0`           | `0`  | `+1`            |
 
-Both sides are patched because Main and Arith are linked by the operation bus,
-and the global permutation check forces them to agree: together they form one
-self-consistent malicious witness, the minimum needed to pass the global bus
-check. Normal execution is unchanged unless the env var is set. The input ELF
-`elf-regressions/arith_bad_mul/test.s` is a stock RV64 program — `li t0,-1; li
-t1,1; mul t2,t0,t1` — followed by two `sw` writes that commit `t2`'s two
-halves to ZisK's public-output region (`OUTPUT_ADDR = 0xa001_0000`, the same
-slots `ziskos::set_output` uses). That puts the value the proof attests to
-into the publics, so the prove summary prints it. No special opcodes or
-instrumentation; the writes are ordinary stores to a memory-mapped region.
+The chunk equations effectively check `|a * b| = |result|`, with `np` selecting
+the sign of the claimed product. `np` is cross-checked against the sign of `d`,
+but `d` is itself witness-controlled. Nothing in the stock AIR forces `np` to
+match the sign implied by the operands.
 
-## The fix
+Main reads `c` as the `mul` result. The malicious witness therefore makes the
+same instruction write `1` instead of `0xffff_ffff_ffff_ffff`.
 
-`state-machines/arith/pil/arith.pil` gains one constraint:
+Both Main and Arith are patched in the repro because the operation bus requires
+them to agree. Main emits `c=1` on the bus, and Arith proves the matching bad
+row. That is the minimum self-consistent malicious witness needed to pass the
+global bus check.
 
-```
+The ELF commits the result to public outputs with ordinary stores to
+`OUTPUT_ADDR = 0xa001_0000`, the same region used by `ziskos::set_output`.
+Successful prove logs print the first public slots, so the proved value is
+visible.
+
+## Proposed Fix
+
+`state-machines/arith/pil/arith.pil` adds:
+
+```pil
 signed * (1 - div) * (np - (na + nb - 2 * na * nb))
                    * (c[0] + c[1] + c[2] + c[3] + d[0] + d[1] + d[2] + d[3]) === 0;
 ```
 
-`na + nb - 2·na·nb` is `na XOR nb`. For a signed multiply the product is
-negative exactly when one operand is negative, so this forces
-`np = na XOR nb`. The selector `signed * (1 - div)` restricts it to signed
-64-bit multiplication (`mul`, `mulh`, `mulsuh`).
+`na + nb - 2 * na * nb` is `na XOR nb`. For signed multiplication, a nonzero
+product is negative exactly when one operand is negative, so the constraint
+forces `np = na XOR nb`.
 
-The trailing factor `c[0]+…+d[3]` is the sum of the eight 16-bit limbs of the
-result, and is zero in the Goldilocks field iff every limb is zero iff the
-true product is zero. The "iff" needs justifying because field arithmetic can
-wrap: but each limb is range-checked to a 16-bit unsigned value (`[0, 2¹⁶)`),
-so the integer sum is at most `8 · (2¹⁶ − 1) < 2¹⁹`, far below the Goldilocks
-modulus `p ≈ 2⁶⁴`. No wraparound — the sum as a field element equals the sum
-as a non-negative integer, so it vanishes only when every limb does.
+The selector `signed * (1 - div)` limits the check to signed multiplication
+rows (`mul`, `mulh`, `mulsuh`) and excludes division rows.
 
-Multiplying by that sum makes the constraint vacuous on zero products, where
-forcing `np = na XOR nb` would be wrong (e.g. `0 * (-5)`: `na=0, nb=1,
-na XOR nb = 1`, but the true product is `0` whose sign bit is `0`). For zero
-products, the existing `arith_table` lookup already pins `np = sign(d3) = 0`,
-so `np` remains correctly fixed.
+The limb-sum factor makes the constraint vacuous for zero products. That case
+must be exempt because, for example, `0 * (-5)` has `na XOR nb = 1` but product
+sign `np = 0`. Since all `c[i]` and `d[i]` limbs are range-checked as 16-bit
+values, their sum is zero in Goldilocks iff every limb is zero: the integer sum
+is at most `8 * (2^16 - 1)`, far below the field modulus. For zero products,
+the existing Arith table/range checks still pin `np` consistently with `d = 0`.
 
-It adds no trace columns, so the same `cargo-zisk` binary drives both the
-stock and patched proving keys.
+For the malicious row, `signed=1`, `div=0`, `na=1`, `nb=0`, `np=0`, and the
+limb sum is `1`, so the new constraint rejects it. The honest row has `np=1`
+and passes.
 
-With the constraint in place the malicious row is rejected (`na=1, nb=0` and a
-nonzero limb sum force `np=1`, but the malicious witness has `np=0`), while
-the honest row (`np=1`) passes.
+Compilation note: using `pil2-compiler v0.9.0`, this line remains an Arith
+every-row constraint of degree 5. It is not rewritten into lower-degree
+constraints and it adds no witness columns.
 
-## Build and run
+## Run
 
-The demonstration runs entirely through the branch Dockerfile. It requires an
-NVIDIA GPU and the NVIDIA Container Toolkit; the build targets compute
-capability `sm_120` (RTX 5090) — change `CUDA_ARCH` in the Dockerfile for a
-different GPU.
+Requires an NVIDIA GPU and NVIDIA Container Toolkit. The Dockerfile defaults to
+`CUDA_ARCH=sm_120` for RTX 5090; change it for other GPUs.
 
 ```bash
 docker build -f Dockerfile.repro-arith-mul -t zisk-arith-mul-repro .
@@ -112,51 +114,29 @@ docker run --rm --gpus all \
   zisk-arith-mul-repro
 ```
 
-The container builds a GPU-capable `cargo-zisk`, the tiny `MUL` ELF, and the
-pil2 toolchain needed to recompile the circuit. `repro-arith-mul.sh` then runs
-three phases:
+The script installs the stock v0.18.0 proving key if needed, rebuilds the
+patched proving key into `~/.zisk/provingKey-patched`, and caches both across
+runs. The patched setup is slow because it recompiles `zisk.pilout`, regenerates
+the proving key, builds recursive/aggregation setup, and generates GPU constant
+trees.
 
-- **Phase 1** — stock proving key + malicious witness → `prove --verify-proofs`
-  generates a full STARK proof of `MUL(-1,1) = 1` that **verifies**.
-- **Phase 2** — recompile `zisk.pilout` from the patched `arith.pil` and
-  regenerate the full proving key into `~/.zisk/provingKey-patched`. Slow
-  (PIL compile + basic setup + recursive/aggregation setup + GPU constant
-  trees, ~2 hours), and cached -- runs at most once per host.
-- **Phase 3** — patched proving key + malicious witness → `prove --verify-proofs`
-  **rejects** it; patched proving key + honest witness → `prove --verify-proofs`
-  **verifies**.
-
-Every phase exercises the full proving pipeline (basic per-AIR proofs
-aggregated up to a vadcop final proof). The patched Arith constraint is a
-local AIR constraint, so a malicious Arith row makes basic proof generation
-fail; the run reports a non-zero exit, which the script records as REJECTED.
-
-The `~/.zisk` mount is the canonical ZisK directory. The stock v0.18.0 proving
-key is installed there by `ziskup` if absent, and the rebuilt patched key is
-cached alongside it; both are large, so the run reuses them across invocations.
-
-Each successful prove prints the proof's public outputs, so the committed
-value of `t2` is visible directly in the log:
-
-```text
-# Phase 1 (stock, malicious):
-Public outputs[0..8]: 0x00000001 0x00000000 ...    # t2 = 1   (wrong, but verifies)
-
-# Phase 3b (patched, honest):
-Public outputs[0..8]: 0xffffffff 0xffffffff ...    # t2 = -1  (correct, verifies)
-```
-
-Same ELF, same verifier, two distinct verifying proofs publicly committing to
-two different values of `t2`. That contradiction is the soundness break.
-
-The script ends with an explicit summary:
+Expected summary:
 
 ```text
 Phase 1   stock   circuit + malicious witness : VERIFIED
 Phase 3a  patched circuit + malicious witness : REJECTED (rc=...)
 Phase 3b  patched circuit + honest witness    : VERIFIED
-
-RESULT: as expected -- the stock circuit proves MUL(-1,1) = 1, the
-        patched circuit rejects that malicious witness, and the honest
-        multiplication still proves and verifies.
 ```
+
+Expected public outputs:
+
+```text
+# Phase 1: stock circuit + malicious witness
+Public outputs[0..8]: 0x00000001 0x00000000 ...    # t2 = 1
+
+# Phase 3b: patched circuit + honest witness
+Public outputs[0..8]: 0xffffffff 0xffffffff ...    # t2 = -1
+```
+
+The stock circuit verifies the wrong public output. The patched circuit rejects
+that bad witness while preserving the honest one.
