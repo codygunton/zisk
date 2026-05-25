@@ -8,8 +8,7 @@ correct result `-1`.
 
 The branch also carries a minimal proposed fix in
 `state-machines/arith/pil/arith.pil`. The fix adds no trace columns, but the
-new constraint compiles as degree 5 in the Arith AIR; that degree/performance
-tradeoff should be reviewed by the ZisK team before merging.
+new constraint compiles as degree 5 in the Arith AIR, which I think is unacceptable.
 
 The containerized repro runs:
 
