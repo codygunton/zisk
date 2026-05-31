@@ -217,6 +217,18 @@ airtemplate Arith(const int N = 2**18) {
     np * (1 - np) === 0;
     sext * (1 - sext) === 0;
 
+    // Diagnostic repro guard for the DIV/REM malicious-witness demo.
+    //
+    // This is intentionally not presented as ZisK's final efficient fix. It
+    // makes the patched proving key reject the demonstrated bad assignment:
+    // signed 64-bit division with a negative remainder and non-negative
+    // divisor, where the current Binary OP_LT_ABS_NP table can accept
+    // |remainder| == divisor because its bytewise two's-complement absolute
+    // value comparison does not propagate the +1 carry. Honest DIV(-256,256)
+    // and REM(-256,256) have nr = 0, so this guard is inactive for the honest
+    // trace used by the repro.
+    div * signed * nr * (1 - nb) * (1 - div_by_zero) * d[0] === 0;
+
     col witness bits(8) op;
 
     // div m32 sa  sb  primary  secondary  opcodes              na   nb   np   nr   sext(c)

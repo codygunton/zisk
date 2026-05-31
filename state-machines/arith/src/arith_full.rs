@@ -21,6 +21,9 @@ use zisk_pil::{ArithTrace, ArithTraceRowOps};
 
 const CHUNK_SIZE: u64 = 0x10000;
 const EXTENSION: u64 = 0xFFFFFFFF;
+const REPRO_BAD_ARITH_DIV_REM_ENV: &str = "ZISK_REPRO_BAD_ARITH_DIV_REM";
+const REPRO_DIV_REM_A: u64 = 0xFFFF_FFFF_FFFF_FF00;
+const REPRO_DIV_REM_B: u64 = 0x100;
 
 /// The `ArithFullSM` struct represents the Arithmetic Full State Machine.
 ///
@@ -172,6 +175,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         let b = OperationBusData::get_b(&input_data);
 
         aop.calculate(opcode, a, b);
+        Self::maybe_inject_bad_div_rem_repro(&mut aop, opcode, a, b);
 
         // If the operation is a division, then use the binary component
         // to check that the remainer is lower than the divisor
@@ -221,6 +225,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         let b = OperationBusData::get_b(&input_data);
 
         aop.calculate(opcode, a, b);
+        Self::maybe_inject_bad_div_rem_repro(aop, opcode, a, b);
         let mut row = R::default();
         for i in [0, 2] {
             row.set_a(i, aop.a[i] as u16);
@@ -332,5 +337,42 @@ impl<F: PrimeField64> ArithFullSM<F> {
         row.set_bus_res1(bus_res1 as u32);
 
         row
+    }
+
+    fn maybe_inject_bad_div_rem_repro(aop: &mut ArithOperation, opcode: u8, a: u64, b: u64) {
+        if std::env::var_os(REPRO_BAD_ARITH_DIV_REM_ENV).is_none() {
+            return;
+        }
+
+        let is_div = opcode == ZiskOp::Div.code();
+        let is_rem = opcode == ZiskOp::Rem.code();
+        if (!is_div && !is_rem) || a != REPRO_DIV_REM_A || b != REPRO_DIV_REM_B {
+            return;
+        }
+
+        tracing::warn!(
+            "injecting bad Arith DIV/REM repro row: op={} dividend=-256 divisor=256 quotient=0 remainder=-256",
+            if is_div { "DIV" } else { "REM" }
+        );
+
+        aop.a = [0, 0, 0, 0]; // THE LIE: quotient = 0 (honest: -1).
+        aop.b = [0x0100, 0, 0, 0]; // divisor = 256.
+        aop.c = [0xFF00, 0xFFFF, 0xFFFF, 0xFFFF]; // dividend = -256.
+        aop.d = [0xFF00, 0xFFFF, 0xFFFF, 0xFFFF]; // THE LIE: remainder = -256.
+        aop.carry = [0, 0, 0, 0, 0, 0, 0];
+        aop.m32 = false;
+        aop.div = true;
+        aop.na = false; // quotient sign in the table/range encoding.
+        aop.nb = false; // divisor is positive.
+        aop.np = true; // dividend is negative.
+        aop.nr = true; // claimed remainder is negative.
+        aop.sext = false;
+        aop.main_mul = false;
+        aop.main_div = is_div;
+        aop.signed = true;
+        aop.range_ab = 4; // quotient positive/zero, divisor positive.
+        aop.range_cd = 8; // dividend negative, remainder negative.
+        aop.div_by_zero = false;
+        aop.div_overflow = false;
     }
 }

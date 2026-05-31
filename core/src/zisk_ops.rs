@@ -38,6 +38,10 @@ use crate::{
     FCALL_PARAMS_MAX_SIZE, FCALL_RESULT_MAX_SIZE,
 };
 
+const REPRO_BAD_ARITH_DIV_REM_ENV: &str = "ZISK_REPRO_BAD_ARITH_DIV_REM";
+const REPRO_DIV_REM_A: u64 = 0xFFFF_FFFF_FFFF_FF00;
+const REPRO_DIV_REM_B: u64 = 0x100;
+
 /// Determines the type of a [`ZiskOp`].
 ///
 /// The type will be used to assign the proof generation of a main state machine operation result to
@@ -996,7 +1000,14 @@ pub fn opc_divu(ctx: &mut InstContext) {
 /// If a=0x8000000000000000 (MIN_I64) and b=0xFFFFFFFFFFFFFFFF (-1) the result should be -MIN_I64,
 /// which cannot be represented with 64 bits (overflow) and it returns c=a.
 #[inline(always)]
-pub const fn op_div(a: u64, b: u64) -> (u64, bool) {
+pub fn op_div(a: u64, b: u64) -> (u64, bool) {
+    if std::env::var_os(REPRO_BAD_ARITH_DIV_REM_ENV).is_some()
+        && a == REPRO_DIV_REM_A
+        && b == REPRO_DIV_REM_B
+    {
+        return (0, false);
+    }
+
     if b == 0 {
         return (M64, true);
     }
@@ -1063,7 +1074,14 @@ pub fn opc_remu(ctx: &mut InstContext) {
 /// Sets c to a mod b, as 64-bits signed values, and flag to false.
 /// If b=0 (divide by zero) it sets c to a, and sets flag to true.
 #[inline(always)]
-pub const fn op_rem(a: u64, b: u64) -> (u64, bool) {
+pub fn op_rem(a: u64, b: u64) -> (u64, bool) {
+    if std::env::var_os(REPRO_BAD_ARITH_DIV_REM_ENV).is_some()
+        && a == REPRO_DIV_REM_A
+        && b == REPRO_DIV_REM_B
+    {
+        return (REPRO_DIV_REM_A, false);
+    }
+
     if b == 0 {
         return (a, true);
     }
