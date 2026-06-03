@@ -60,7 +60,8 @@ pub mod mem;
 mod operations;
 pub mod riscv2zisk;
 pub mod riscv2zisk_context;
-pub mod rv64im_transpiler;
+#[cfg(feature = "aeneas_extract")]
+pub mod aeneas_extract;
 mod utils;
 pub mod zisk_definitions;
 pub mod zisk_inst;
@@ -79,7 +80,8 @@ pub use inst_context::*;
 pub use mem::*;
 pub use riscv2zisk::*;
 pub use riscv2zisk_context::*;
-pub use rv64im_transpiler::*;
+#[cfg(feature = "aeneas_extract")]
+pub use aeneas_extract::*;
 pub use utils::*;
 pub use zisk_definitions::*;
 pub use zisk_inst::*;

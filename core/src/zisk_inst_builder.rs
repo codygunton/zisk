@@ -7,6 +7,7 @@ use crate::{
     ZiskInst, REGS_IN_MAIN_FROM, REGS_IN_MAIN_TO, REG_FIRST, SRC_C, SRC_IMM, SRC_IND, SRC_MEM,
     SRC_REG, STORE_IND, STORE_MEM, STORE_NONE, STORE_REG,
 };
+use riscv::RiscvInstruction;
 
 // #[cfg(feature = "sp")]
 // use crate::SRC_SP;
@@ -28,11 +29,31 @@ impl ZiskInstBuilder {
     }
     /// Constructor setting the initial pc address and original RISC-V instruction
     #[inline(always)]
+    #[cfg(not(feature = "aeneas_extract"))]
     pub fn new_from_riscv(paddr: u64, riscv_inst: String) -> ZiskInstBuilder {
         let mut zib = ZiskInstBuilder::default();
         zib.i.paddr = paddr;
         zib.i.riscv_inst = Some(riscv_inst);
         zib
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "aeneas_extract")]
+    pub fn new_from_riscv(paddr: u64, riscv_inst: String) -> ZiskInstBuilder {
+        let _ = riscv_inst;
+        Self::new(paddr)
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "aeneas_extract"))]
+    pub fn new_for_riscv(i: &RiscvInstruction) -> ZiskInstBuilder {
+        Self::new_from_riscv(i.rom_address, i.inst.clone())
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "aeneas_extract")]
+    pub fn new_for_riscv(i: &RiscvInstruction) -> ZiskInstBuilder {
+        Self::new(i.rom_address)
     }
 
     /// Converts a string to an a source value
@@ -157,6 +178,70 @@ impl ZiskInstBuilder {
         }
     }
 
+    #[cfg(not(feature = "aeneas_extract"))]
+    pub fn src_a_imm(&mut self, value: u64) {
+        let (v0, v1) = Self::nto32s(value as i128);
+        self.i.a_src = SRC_IMM;
+        self.i.a_use_sp_imm1 = v1 as u64;
+        self.i.a_offset_imm0 = v0 as u64;
+    }
+
+    #[cfg(feature = "aeneas_extract")]
+    pub fn src_a_imm(&mut self, value: u64) {
+        self.i.a_src = SRC_IMM;
+        self.i.a_use_sp_imm1 = value >> 32;
+        self.i.a_offset_imm0 = value & 0xffffffff;
+    }
+
+    pub fn src_a_reg(&mut self, reg: u64, use_sp: bool) {
+        if reg == 0 {
+            self.src_a_imm(0);
+        } else if reg < REGS_IN_MAIN_FROM as u64 || reg > REGS_IN_MAIN_TO as u64 {
+            self.i.a_src = SRC_MEM;
+            self.i.a_use_sp_imm1 = if use_sp { 1 } else { 0 };
+            self.i.a_offset_imm0 = REG_FIRST + reg * 8;
+        } else {
+            self.i.a_src = SRC_REG;
+            self.i.a_use_sp_imm1 = if use_sp { 1 } else { 0 };
+            self.i.a_offset_imm0 = reg;
+        }
+    }
+
+    #[cfg(not(feature = "aeneas_extract"))]
+    pub fn src_b_imm(&mut self, value: u64) {
+        let (v0, v1) = Self::nto32s(value as i128);
+        self.i.b_src = SRC_IMM;
+        self.i.b_use_sp_imm1 = v1 as u64;
+        self.i.b_offset_imm0 = v0 as u64;
+    }
+
+    #[cfg(feature = "aeneas_extract")]
+    pub fn src_b_imm(&mut self, value: u64) {
+        self.i.b_src = SRC_IMM;
+        self.i.b_use_sp_imm1 = value >> 32;
+        self.i.b_offset_imm0 = value & 0xffffffff;
+    }
+
+    pub fn src_b_reg(&mut self, reg: u64, use_sp: bool) {
+        if reg == 0 {
+            self.src_b_imm(0);
+        } else if reg < REGS_IN_MAIN_FROM as u64 || reg > REGS_IN_MAIN_TO as u64 {
+            self.i.b_src = SRC_MEM;
+            self.i.b_use_sp_imm1 = if use_sp { 1 } else { 0 };
+            self.i.b_offset_imm0 = REG_FIRST + reg * 8;
+        } else {
+            self.i.b_src = SRC_REG;
+            self.i.b_use_sp_imm1 = if use_sp { 1 } else { 0 };
+            self.i.b_offset_imm0 = reg;
+        }
+    }
+
+    pub fn src_b_lastc(&mut self) {
+        self.i.b_src = SRC_C;
+        self.i.b_use_sp_imm1 = 0;
+        self.i.b_offset_imm0 = 0;
+    }
+
     /// Sets the c store instruction attributes
     pub fn store(&mut self, dst_input: &str, offset_input: i64, use_sp: bool, store_pc: bool) {
         let mut dst = dst_input;
@@ -182,9 +267,29 @@ impl ZiskInstBuilder {
         }
     }
 
+    pub fn store_reg(&mut self, offset: i64, use_sp: bool, store_pc: bool) {
+        if offset == 0 {
+            return;
+        } else if offset < REGS_IN_MAIN_FROM as i64 || offset > REGS_IN_MAIN_TO as i64 {
+            self.i.store_pc = store_pc;
+            self.i.store = STORE_MEM;
+            self.i.store_use_sp = use_sp;
+            self.i.store_offset = REG_FIRST as i64 + offset * 8;
+        } else {
+            self.i.store_pc = store_pc;
+            self.i.store = STORE_REG;
+            self.i.store_use_sp = use_sp;
+            self.i.store_offset = offset;
+        }
+    }
+
     /// Set the store as a store ra
     pub fn store_pc(&mut self, dst: &str, offset: i64, use_sp: bool) {
         self.store(dst, offset, use_sp, true);
+    }
+
+    pub fn store_pc_reg(&mut self, offset: i64, use_sp: bool) {
+        self.store_reg(offset, use_sp, true);
     }
 
     /// Sets the set pc flag to true
@@ -200,16 +305,45 @@ impl ZiskInstBuilder {
     /// Sets the opcode, and other instruction attributes that depend on it
     pub fn op(&mut self, optxt: &str) -> Result<(), InvalidNameError> {
         let op = ZiskOp::try_from_name(optxt)?;
+        self.op_zisk(op);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "aeneas_extract"))]
+    pub fn op_zisk(&mut self, op: ZiskOp) {
         self.i.is_external_op = op.op_type() != OpType::Internal && op.op_type() != OpType::Fcall;
         self.i.op = op.code();
-        self.i.op_str = op.name();
-        self.i.m32 = optxt.contains("_w");
-        self.i.func = op.get_call_function();
+        self.set_runtime_op_fields(op.name(), op);
         self.i.op_type = op.op_type().into();
         self.i.input_size = op.input_size();
         // assume that input_size > 0 implies a precompiled, and precompiled uses step on operations
         self.i.is_precompiled = op.input_size() > 0;
-        Ok(())
+    }
+
+    #[cfg(feature = "aeneas_extract")]
+    pub fn op_zisk(&mut self, op: ZiskOp) {
+        let op_type = op.op_type();
+        self.i.is_external_op = match op_type {
+            OpType::Internal | OpType::Fcall => false,
+            _ => true,
+        };
+        self.i.op = op.code();
+        self.set_runtime_op_fields("", op);
+        self.i.op_type = op_type.into();
+        self.i.input_size = op.input_size();
+        self.i.is_precompiled = op.input_size() > 0;
+    }
+
+    #[cfg(not(feature = "aeneas_extract"))]
+    fn set_runtime_op_fields(&mut self, optxt: &str, op: ZiskOp) {
+        self.i.op_str = op.name();
+        self.i.m32 = optxt.contains("_w");
+        self.i.func = op.get_call_function();
+    }
+
+    #[cfg(feature = "aeneas_extract")]
+    fn set_runtime_op_fields(&mut self, _optxt: &str, _op: ZiskOp) {
+        self.i.m32 = false;
     }
 
     /// Sets jump offsets.  The first offset is added to the pc when a set pc or a flag happens,
@@ -240,8 +374,15 @@ impl ZiskInstBuilder {
     // }
 
     /// Sets a verbose description of the instruction
+    #[cfg(not(feature = "aeneas_extract"))]
     pub fn verbose(&mut self, s: &str) {
         self.i.verbose = s.to_owned();
+    }
+
+    /// Sets a verbose description of the instruction
+    #[cfg(feature = "aeneas_extract")]
+    pub fn verbose(&mut self, s: &str) {
+        let _ = s;
     }
 
     /// Called when the instruction has been built
