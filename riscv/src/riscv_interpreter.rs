@@ -1,6 +1,6 @@
 //! Parses a 32-bits RISC-V instruction
 
-use crate::{RiscvInstruction, Rvd};
+use crate::{decode_fence_raw, FenceDecodeKind, RiscvInstruction, Rvd};
 
 /// Convert 32-bits data chunk that contains a signed integer of a specified size in bits to a
 /// signed integer of 32 bits
@@ -256,26 +256,20 @@ fn riscv_get_instruction_32(inst: u32, root_address: u64, code_index: usize) -> 
             //println!("Decoded CSR instruction: csr=0x{:x} i.inst={}", i.csr, i.inst);
         }
     } else if i.t == *"F" {
-        i.funct3 = (inst & 0x7000) >> 12;
-        if i.funct3 == 0 {
-            if (inst & 0xF00F8F80) != 0 {
-                //panic!("Invalid F funct3=0 inst=0x{inst:x} at index={code_index} addr=0x{rom_address:x}");
-                i.inst = "reserved".to_string();
-            } else {
-                i.pred = (inst & 0x0F000000) >> 24;
-                i.succ = (inst & 0x00F00000) >> 20;
+        let fence = decode_fence_raw(inst);
+        i.funct3 = fence.funct3;
+        match fence.kind {
+            FenceDecodeKind::Fence => {
+                i.pred = fence.pred;
+                i.succ = fence.succ;
                 i.inst = "fence".to_string();
             }
-        } else if i.funct3 == 1 {
-            if (inst & 0xFFFF8F80) != 0 {
-                //panic!("Invalid F funct3=1 inst=0x{inst:x} at index={code_index} addr=0x{rom_address:x}");
-                i.inst = "reserved".to_string();
-            } else {
+            FenceDecodeKind::FenceI => {
                 i.inst = "fence.i".to_string();
             }
-        } else {
-            //panic!("Invalid F funct3={:?} inst=0x{inst:x} at index={code_index} addr=0x{rom_address:x}", i.funct3);
-            i.inst = "reserved".to_string();
+            FenceDecodeKind::Reserved | FenceDecodeKind::NotFence => {
+                i.inst = "reserved".to_string();
+            }
         }
     } else if i.t == *"INVALID" {
     } else {

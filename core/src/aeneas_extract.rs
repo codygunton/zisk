@@ -1,5 +1,9 @@
 use std::marker::PhantomData;
 
+#[path = "../../riscv/src/fence_decode.rs"]
+mod fence_decode;
+
+use fence_decode::{decode_fence_raw, FenceDecodeKind};
 use riscv::RiscvInstruction;
 
 use crate::{Riscv2ZiskContext, Rv64imSingleRowOpcode, ZiskInst};
@@ -135,6 +139,11 @@ pub fn extract_fence_from_inst(i: &RiscvInstruction) -> ZiskInstExtract {
     with_context!(i, ctx, {
         ctx.lower_rv64im_single_row(i, Rv64imSingleRowOpcode::Fence, &[]);
     })
+}
+
+pub fn extract_fence_accepts_raw_inst(raw: u32) -> bool {
+    let fence = decode_fence_raw(raw);
+    fence.kind == FenceDecodeKind::Fence
 }
 
 macro_rules! register_extract {
@@ -283,6 +292,16 @@ mod tests {
         };
         ctx.convert(i, &[]);
         ZiskInstExtract::from_inst(&ctx.extract_inst.unwrap().i)
+    }
+
+    #[test]
+    fn raw_fence_extraction_uses_production_decoder_gate() {
+        assert!(extract_fence_accepts_raw_inst(0x0000000F));
+        assert!(!extract_fence_accepts_raw_inst(0x1000000F)); // fm = 1
+        assert!(!extract_fence_accepts_raw_inst(0x0000800F)); // rs1 = x1
+        assert!(!extract_fence_accepts_raw_inst(0x0000008F)); // rd = x1
+        assert!(!extract_fence_accepts_raw_inst(0x0000100F)); // fence.i
+        assert!(!extract_fence_accepts_raw_inst(0x00000013)); // addi/nop
     }
 
     #[test]
