@@ -59,6 +59,14 @@ const CSR_PRECOMPILED: [&str; 27] = [
     "profile",
 ];
 const CSR_PRECOMPILED_ADDR_START: u16 = SYSCALL_KECCAKF_ID;
+#[cfg(not(feature = "aeneas_extract"))]
+const CSR_DMA_MEMCPY_ADDR: u32 = SYSCALL_DMA_MEMCPY_ID as u32;
+#[cfg(feature = "aeneas_extract")]
+const CSR_DMA_MEMCPY_ADDR: u32 = 0x813;
+#[cfg(not(feature = "aeneas_extract"))]
+const CSR_DMA_MEMCMP_ADDR: u32 = SYSCALL_DMA_MEMCMP_ID as u32;
+#[cfg(feature = "aeneas_extract")]
+const CSR_DMA_MEMCMP_ADDR: u32 = 0x814;
 const CSR_FCALL_ADDR_START: u16 = 0x8C0;
 const CSR_FCALL_ADDR_END: u16 = 0x8DF;
 const CSR_FCALL_GET_ADDR: u16 = 0xFFE;
@@ -186,7 +194,7 @@ impl Riscv2ZiskContext<'_> {
                     Some(precompile) => precompile,
                     None => 0,
                 };
-                if riscv_instruction.rd == 0 && input_precompile == SYSCALL_DMA_MEMCPY_ID as u32 {
+                if riscv_instruction.rd == 0 && input_precompile == CSR_DMA_MEMCPY_ADDR {
                     let input_precompile_reg = self.input_precompile_reg.unwrap();
                     self.create_precompiles_op_zisk(
                         riscv_instruction,
@@ -195,7 +203,7 @@ impl Riscv2ZiskContext<'_> {
                         input_precompile_reg,
                         4,
                     );
-                } else if input_precompile == SYSCALL_DMA_MEMCMP_ID as u32 {
+                } else if input_precompile == CSR_DMA_MEMCMP_ADDR {
                     let input_precompile_reg = self.input_precompile_reg.unwrap();
                     self.create_precompiles_op_zisk(
                         riscv_instruction,
