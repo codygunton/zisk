@@ -322,18 +322,6 @@ impl ZiskInstBuilder {
         Ok(())
     }
 
-    #[cfg(not(feature = "aeneas_extract"))]
-    pub fn op_zisk(&mut self, op: ZiskOp) {
-        self.i.is_external_op = op.op_type() != OpType::Internal && op.op_type() != OpType::Fcall;
-        self.i.op = op.code();
-        self.set_runtime_op_fields(op.name(), op);
-        self.i.op_type = op.op_type().into();
-        self.i.input_size = op.input_size();
-        // assume that input_size > 0 implies a precompiled, and precompiled uses step on operations
-        self.i.is_precompiled = op.input_size() > 0;
-    }
-
-    #[cfg(feature = "aeneas_extract")]
     pub fn op_zisk(&mut self, op: ZiskOp) {
         let op_type = op.op_type();
         self.i.is_external_op = match op_type {
@@ -341,22 +329,19 @@ impl ZiskInstBuilder {
             _ => true,
         };
         self.i.op = op.code();
-        self.set_runtime_op_fields("", op);
+        self.set_runtime_op_fields(op);
         self.i.op_type = op_type.into();
         self.i.input_size = op.input_size();
         self.i.is_precompiled = op.input_size() > 0;
     }
 
-    #[cfg(not(feature = "aeneas_extract"))]
-    fn set_runtime_op_fields(&mut self, optxt: &str, op: ZiskOp) {
-        self.i.op_str = op.name();
-        self.i.m32 = optxt.contains("_w");
-        self.i.func = op.get_call_function();
-    }
-
-    #[cfg(feature = "aeneas_extract")]
-    fn set_runtime_op_fields(&mut self, _optxt: &str, _op: ZiskOp) {
-        self.i.m32 = false;
+    fn set_runtime_op_fields(&mut self, op: ZiskOp) {
+        #[cfg(not(feature = "aeneas_extract"))]
+        {
+            self.i.op_str = op.name();
+            self.i.func = op.get_call_function();
+        }
+        self.i.m32 = op.is_m32();
     }
 
     /// Sets jump offsets.  The first offset is added to the pc when a set pc or a flag happens,
