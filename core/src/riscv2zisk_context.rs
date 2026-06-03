@@ -666,6 +666,24 @@ impl Riscv2ZiskContext<'_> {
         self.insert_inst(i.rom_address, zib);
     }
 
+    #[cfg(feature = "aeneas_extract")]
+    pub fn create_register_op_zisk(
+        &mut self,
+        i: &RiscvInstruction,
+        op: ZiskOp,
+        inst_size: u64,
+    ) {
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_reg(i.rs1 as u64, false);
+        zib.src_b_reg(i.rs2 as u64, false);
+        zib.op_zisk(op);
+        zib.store_reg(i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
     /// Creates a Zisk precompiles operation that implements a RISC-V register operation,
     /// loads both input parameters a and b from their respective registers, and stores the
     /// result c into a register.
@@ -778,6 +796,28 @@ impl Riscv2ZiskContext<'_> {
         self.insert_inst(i.rom_address, zib);
     }
 
+    #[cfg(feature = "aeneas_extract")]
+    pub fn create_branch_op_zisk(
+        &mut self,
+        i: &RiscvInstruction,
+        op: ZiskOp,
+        neg: bool,
+        inst_size: u64,
+    ) {
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_reg(i.rs1 as u64, false);
+        zib.src_b_reg(i.rs2 as u64, false);
+        zib.op_zisk(op);
+        if neg {
+            zib.j(inst_size as i64, i.imm as i64);
+        } else {
+            zib.j(i.imm as i64, inst_size as i64);
+        }
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
     /// Creates a Zisk flag operation that simply sets the flag to true and continues the execution
     /// to the next operation
     pub fn hint(&mut self, i: &RiscvInstruction, inst_size: u64) {
@@ -797,11 +837,20 @@ impl Riscv2ZiskContext<'_> {
     pub fn nop(&mut self, i: &RiscvInstruction, inst_size: u64) {
         assert!(inst_size == 2 || inst_size == 4);
         let mut zib = ZiskInstBuilder::new_for_riscv(i);
-        zib.src_a("imm", 0, false);
-        zib.src_b("imm", 0, false);
-        zib.op("flag").unwrap();
+        #[cfg(not(feature = "aeneas_extract"))]
+        {
+            zib.src_a("imm", 0, false);
+            zib.src_b("imm", 0, false);
+            zib.op("flag").unwrap();
+            zib.verbose(&i.inst.to_string());
+        }
+        #[cfg(feature = "aeneas_extract")]
+        {
+            zib.src_a_imm(0);
+            zib.src_b_imm(0);
+            zib.op_zisk(ZiskOp::Flag);
+        }
         zib.j(inst_size as i64, inst_size as i64);
-        zib.verbose(&i.inst.to_string());
         zib.build();
         self.insert_inst(i.rom_address, zib);
     }
@@ -845,6 +894,20 @@ impl Riscv2ZiskContext<'_> {
         self.insert_inst(i.rom_address, zib);
     }
 
+    #[cfg(feature = "aeneas_extract")]
+    pub fn load_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, w: u64, inst_size: u64) {
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_reg(i.rs1 as u64, false);
+        zib.ind_width(w);
+        zib.src_b_ind(i.imm as u64, false);
+        zib.op_zisk(op);
+        zib.store_reg(i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
     // sb rs2, imm(rs1)
     //    copyb_d([%rs1], [%rs2]) -> [a + imm]
 
@@ -870,6 +933,20 @@ impl Riscv2ZiskContext<'_> {
         self.insert_inst(i.rom_address, zib);
     }
 
+    #[cfg(feature = "aeneas_extract")]
+    pub fn store_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, w: u64, inst_size: u64) {
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_reg(i.rs1 as u64, false);
+        zib.src_b_reg(i.rs2 as u64, false);
+        zib.op_zisk(op);
+        zib.ind_width(w);
+        zib.store_ind(i.imm as i64, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
     // addi rd, rs1, imm
     //      add([%rs1], imm) -> [%rd]
 
@@ -884,6 +961,19 @@ impl Riscv2ZiskContext<'_> {
         zib.store("reg", i.rd as i64, false, false);
         zib.j(inst_size as i64, inst_size as i64);
         zib.verbose(&format!("{} r{}, r{}, 0x{:x}", i.inst, i.rd, i.rs1, i.imm));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
+    #[cfg(feature = "aeneas_extract")]
+    pub fn immediate_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, inst_size: u64) {
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_reg(i.rs1 as u64, false);
+        zib.src_b_imm(i.imm as u64);
+        zib.op_zisk(op);
+        zib.store_reg(i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
         zib.build();
         self.insert_inst(i.rom_address, zib);
     }
@@ -912,6 +1002,28 @@ impl Riscv2ZiskContext<'_> {
         self.insert_inst(i.rom_address, zib);
     }
 
+    #[cfg(feature = "aeneas_extract")]
+    pub fn immediate_op_or_x0_copyb_zisk(
+        &mut self,
+        i: &RiscvInstruction,
+        op: ZiskOp,
+        inst_size: u64,
+    ) {
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_reg(i.rs1 as u64, false);
+        zib.src_b_imm(i.imm as u64);
+        if i.rs1 == 0 {
+            zib.op_zisk(ZiskOp::CopyB);
+        } else {
+            zib.op_zisk(op);
+        }
+        zib.store_reg(i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
     pub fn copyb(&mut self, i: &RiscvInstruction, inst_size: u64, rs: u64) {
         assert!(inst_size == 2 || inst_size == 4);
         assert!(rs == 1 || rs == 2);
@@ -921,6 +1033,20 @@ impl Riscv2ZiskContext<'_> {
         zib.op("copyb").unwrap();
         zib.verbose(&format!("{} r{}, r{}, 0x{:x} => copyb", i.inst, i.rd, i.rs1, i.imm));
         zib.store("reg", i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
+    }
+
+    #[cfg(feature = "aeneas_extract")]
+    pub fn copyb_zisk(&mut self, i: &RiscvInstruction, inst_size: u64, rs: u64) {
+        assert!(inst_size == 2 || inst_size == 4);
+        assert!(rs == 1 || rs == 2);
+        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        zib.src_a_imm(0);
+        zib.src_b_reg(if rs == 1 { i.rs1 } else { i.rs2 } as u64, false);
+        zib.op_zisk(ZiskOp::CopyB);
+        zib.store_reg(i.rd as i64, false, false);
         zib.j(inst_size as i64, inst_size as i64);
         zib.build();
         self.insert_inst(i.rom_address, zib);

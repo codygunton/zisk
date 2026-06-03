@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use riscv::RiscvInstruction;
 
-use crate::{Riscv2ZiskContext, ZiskInst};
+use crate::{zisk_ops::ZiskOp, Riscv2ZiskContext, ZiskInst};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ZiskInstExtract {
@@ -150,42 +150,118 @@ pub fn extract_jalr_from_inst(i: &RiscvInstruction) -> ZiskInstExtract {
     })
 }
 
-pub fn extract_register_op(
-    rom_address: u64,
-    rd: u32,
-    rs1: u32,
-    rs2: u32,
-    op: &str,
-) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, rd, rs1, rs2, 0);
+pub fn extract_fence_from_inst(i: &RiscvInstruction) -> ZiskInstExtract {
     with_context!(i, ctx, {
-        ctx.create_register_op(&i, op, 4);
+        ctx.nop(i, 4);
     })
 }
 
-pub fn extract_immediate_op(
-    rom_address: u64,
-    rd: u32,
-    rs1: u32,
-    imm: i32,
-    op: &str,
-) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, rd, rs1, 0, imm);
-    with_context!(i, ctx, {
-        ctx.immediate_op(&i, op, 4);
-    })
+macro_rules! register_extract {
+    ($name:ident, $op:expr) => {
+        pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
+            with_context!(i, ctx, {
+                ctx.create_register_op_zisk(i, $op, 4);
+            })
+        }
+    };
 }
 
-pub fn extract_branch_op(
-    rom_address: u64,
-    rs1: u32,
-    rs2: u32,
-    imm: i32,
-    op: &str,
-    neg: bool,
-) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, 0, rs1, rs2, imm);
-    with_context!(i, ctx, {
-        ctx.create_branch_op(&i, op, neg, 4);
-    })
+macro_rules! immediate_extract {
+    ($name:ident, $op:expr) => {
+        pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
+            with_context!(i, ctx, {
+                ctx.immediate_op_zisk(i, $op, 4);
+            })
+        }
+    };
 }
+
+macro_rules! immediate_or_x0_copyb_extract {
+    ($name:ident, $op:expr) => {
+        pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
+            with_context!(i, ctx, {
+                ctx.immediate_op_or_x0_copyb_zisk(i, $op, 4);
+            })
+        }
+    };
+}
+
+macro_rules! branch_extract {
+    ($name:ident, $op:expr, $neg:expr) => {
+        pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
+            with_context!(i, ctx, {
+                ctx.create_branch_op_zisk(i, $op, $neg, 4);
+            })
+        }
+    };
+}
+
+macro_rules! load_extract {
+    ($name:ident, $op:expr, $width:expr) => {
+        pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
+            with_context!(i, ctx, {
+                ctx.load_op_zisk(i, $op, $width, 4);
+            })
+        }
+    };
+}
+
+macro_rules! store_extract {
+    ($name:ident, $width:expr) => {
+        pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
+            with_context!(i, ctx, {
+                ctx.store_op_zisk(i, ZiskOp::CopyB, $width, 4);
+            })
+        }
+    };
+}
+
+register_extract!(extract_add_from_inst, ZiskOp::Add);
+register_extract!(extract_sub_from_inst, ZiskOp::Sub);
+register_extract!(extract_sll_from_inst, ZiskOp::Sll);
+register_extract!(extract_slt_from_inst, ZiskOp::Lt);
+register_extract!(extract_sltu_from_inst, ZiskOp::Ltu);
+register_extract!(extract_xor_from_inst, ZiskOp::Xor);
+register_extract!(extract_srl_from_inst, ZiskOp::Srl);
+register_extract!(extract_sra_from_inst, ZiskOp::Sra);
+register_extract!(extract_or_from_inst, ZiskOp::Or);
+register_extract!(extract_and_from_inst, ZiskOp::And);
+register_extract!(extract_addw_from_inst, ZiskOp::AddW);
+register_extract!(extract_subw_from_inst, ZiskOp::SubW);
+register_extract!(extract_sllw_from_inst, ZiskOp::SllW);
+register_extract!(extract_srlw_from_inst, ZiskOp::SrlW);
+register_extract!(extract_sraw_from_inst, ZiskOp::SraW);
+
+immediate_or_x0_copyb_extract!(extract_addi_from_inst, ZiskOp::Add);
+immediate_extract!(extract_slli_from_inst, ZiskOp::Sll);
+immediate_extract!(extract_slti_from_inst, ZiskOp::Lt);
+immediate_extract!(extract_sltiu_from_inst, ZiskOp::Ltu);
+immediate_or_x0_copyb_extract!(extract_xori_from_inst, ZiskOp::Xor);
+immediate_extract!(extract_srli_from_inst, ZiskOp::Srl);
+immediate_extract!(extract_srai_from_inst, ZiskOp::Sra);
+immediate_or_x0_copyb_extract!(extract_ori_from_inst, ZiskOp::Or);
+immediate_extract!(extract_andi_from_inst, ZiskOp::And);
+immediate_extract!(extract_addiw_from_inst, ZiskOp::AddW);
+immediate_extract!(extract_slliw_from_inst, ZiskOp::SllW);
+immediate_extract!(extract_srliw_from_inst, ZiskOp::SrlW);
+immediate_extract!(extract_sraiw_from_inst, ZiskOp::SraW);
+
+branch_extract!(extract_beq_from_inst, ZiskOp::Eq, false);
+branch_extract!(extract_bne_from_inst, ZiskOp::Eq, true);
+branch_extract!(extract_blt_from_inst, ZiskOp::Lt, false);
+branch_extract!(extract_bge_from_inst, ZiskOp::Lt, true);
+branch_extract!(extract_bltu_from_inst, ZiskOp::Ltu, false);
+branch_extract!(extract_bgeu_from_inst, ZiskOp::Ltu, true);
+
+load_extract!(extract_lb_from_inst, ZiskOp::SignExtendB, 1);
+load_extract!(extract_lbu_from_inst, ZiskOp::CopyB, 1);
+load_extract!(extract_lh_from_inst, ZiskOp::SignExtendH, 2);
+load_extract!(extract_lhu_from_inst, ZiskOp::CopyB, 2);
+load_extract!(extract_lw_from_inst, ZiskOp::SignExtendW, 4);
+load_extract!(extract_lwu_from_inst, ZiskOp::CopyB, 4);
+load_extract!(extract_ld_from_inst, ZiskOp::CopyB, 8);
+
+store_extract!(extract_sb_from_inst, 1);
+store_extract!(extract_sh_from_inst, 2);
+store_extract!(extract_sw_from_inst, 4);
+store_extract!(extract_sd_from_inst, 8);

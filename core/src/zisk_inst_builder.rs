@@ -242,6 +242,12 @@ impl ZiskInstBuilder {
         self.i.b_offset_imm0 = 0;
     }
 
+    pub fn src_b_ind(&mut self, offset: u64, use_sp: bool) {
+        self.i.b_src = SRC_IND;
+        self.i.b_use_sp_imm1 = if use_sp { 1 } else { 0 };
+        self.i.b_offset_imm0 = offset;
+    }
+
     /// Sets the c store instruction attributes
     pub fn store(&mut self, dst_input: &str, offset_input: i64, use_sp: bool, store_pc: bool) {
         let mut dst = dst_input;
@@ -290,6 +296,13 @@ impl ZiskInstBuilder {
 
     pub fn store_pc_reg(&mut self, offset: i64, use_sp: bool) {
         self.store_reg(offset, use_sp, true);
+    }
+
+    pub fn store_ind(&mut self, offset: i64, use_sp: bool) {
+        self.i.store_pc = false;
+        self.i.store = STORE_IND;
+        self.i.store_use_sp = use_sp;
+        self.i.store_offset = offset;
     }
 
     /// Sets the set pc flag to true
@@ -354,12 +367,22 @@ impl ZiskInstBuilder {
     }
 
     /// Set the indirection data width.  Accepted values are 1, 2, 4 and 8 (bytes.)
+    #[cfg(not(feature = "aeneas_extract"))]
     pub fn ind_width(&mut self, w: u64) {
         self.i.ind_width = match w {
             1 | 2 | 4 | 8 => w,
             _ => {
                 panic!("ZiskInstBuilder::indWidth() invalid widtch={w}");
             }
+        };
+    }
+
+    /// Set the indirection data width.  Accepted values are 1, 2, 4 and 8 (bytes.)
+    #[cfg(feature = "aeneas_extract")]
+    pub fn ind_width(&mut self, w: u64) {
+        self.i.ind_width = match w {
+            1 | 2 | 4 | 8 => w,
+            _ => panic!("ZiskInstBuilder::indWidth() invalid width"),
         };
     }
 
