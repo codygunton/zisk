@@ -36,5 +36,5 @@ Some basic hints:
 * Documentation for a public module must start in the first line in the module file, starting with
 `//! ...`
 * Documentation for a public element must be placed right before it, starting with `/// ...`
-* Wrap code with triple spike: `//! \`\`\``
-* To avoid cargo doc to compile the code, use `text` after the triple spike: `//! \`\`\`text`
+* Wrap code with triple backticks: `//! \`\`\``
+* To avoid cargo doc compiling the code, use `text` after the triple backticks: `//! \`\`\`text`

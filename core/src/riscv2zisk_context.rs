@@ -2183,6 +2183,8 @@ impl Riscv2ZiskContext<'_> {
 /// Riscv2ZiskContext to perform the instruction transpilation
 /// dma_addrs: (memcpy, memcmp, memset, memmove) addresses, 0 if not present
 pub fn add_zisk_code(rom: &mut ZiskRom, addr: u64, data: &[u8], _dma_addrs: (u64, u64, u64, u64)) {
+    #[cfg(feature = "aeneas_extract")]
+    let _ = &rom;
     //print!("add_zisk_code() addr={}\n", addr);
 
     // Convert input data to a u32 vector
