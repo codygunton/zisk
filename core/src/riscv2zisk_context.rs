@@ -186,7 +186,7 @@ impl Riscv2ZiskContext<'_> {
                     Some(precompile) => precompile,
                     None => 0,
                 };
-                if riscv_instruction.rd == 0 && input_precompile == CSR_DMA_PRECOMPILED_ADDR_START {
+                if riscv_instruction.rd == 0 && input_precompile == SYSCALL_DMA_MEMCPY_ID as u32 {
                     let input_precompile_reg = self.input_precompile_reg.unwrap();
                     self.create_precompiles_op_zisk(
                         riscv_instruction,
@@ -195,7 +195,7 @@ impl Riscv2ZiskContext<'_> {
                         input_precompile_reg,
                         4,
                     );
-                } else if input_precompile == CSR_DMA_PRECOMPILED_ADDR_START + 1 {
+                } else if input_precompile == SYSCALL_DMA_MEMCMP_ID as u32 {
                     let input_precompile_reg = self.input_precompile_reg.unwrap();
                     self.create_precompiles_op_zisk(
                         riscv_instruction,
