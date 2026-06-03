@@ -7,9 +7,11 @@ pub mod riscv_inst;
 pub mod riscv_interpreter;
 pub mod riscv_registers;
 pub mod riscv_rvd;
+pub mod rv64im_decode;
 
 pub use fence_decode::*;
 pub use riscv_inst::*;
 pub use riscv_interpreter::*;
 pub use riscv_registers::*;
 pub use riscv_rvd::*;
+pub use rv64im_decode::*;

@@ -3,6 +3,7 @@
 //! methods to modify its attributes
 
 use crate::{
+    riscv2zisk_single_row::Rv64imLoweringInput,
     zisk_ops::{InvalidNameError, OpType, ZiskOp},
     ZiskInst, REGS_IN_MAIN_FROM, REGS_IN_MAIN_TO, REG_FIRST, SRC_C, SRC_IMM, SRC_IND, SRC_MEM,
     SRC_REG, STORE_IND, STORE_MEM, STORE_NONE, STORE_REG,
@@ -53,6 +54,18 @@ impl ZiskInstBuilder {
     #[inline(always)]
     #[cfg(feature = "aeneas_extract")]
     pub fn new_for_riscv(i: &RiscvInstruction) -> ZiskInstBuilder {
+        Self::new(i.rom_address)
+    }
+
+    #[inline(always)]
+    #[cfg(not(feature = "aeneas_extract"))]
+    pub fn new_for_rv64im_lowering(i: &Rv64imLoweringInput) -> ZiskInstBuilder {
+        Self::new(i.rom_address)
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "aeneas_extract")]
+    pub fn new_for_rv64im_lowering(i: &Rv64imLoweringInput) -> ZiskInstBuilder {
         Self::new(i.rom_address)
     }
 

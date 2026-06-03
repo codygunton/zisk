@@ -1,6 +1,9 @@
 //! Parses a 32-bits RISC-V instruction
 
-use crate::{decode_fence_raw, FenceDecodeKind, RiscvInstruction, Rvd};
+use crate::{
+    decode_32_core, decode_fence_raw, DecodedRv64im, FenceDecodeKind, RiscvFormat,
+    RiscvInstruction, RiscvOpcode, Rvd,
+};
 
 /// Convert 32-bits data chunk that contains a signed integer of a specified size in bits to a
 /// signed integer of 32 bits
@@ -137,7 +140,129 @@ pub fn riscv_interpreter(rom_address: u64, code: &[u16]) -> Vec<RiscvInstruction
     insts
 }
 
+fn rv64im_format_name(format: RiscvFormat) -> &'static str {
+    match format {
+        RiscvFormat::I => "I",
+        RiscvFormat::R => "R",
+        RiscvFormat::S => "S",
+        RiscvFormat::B => "B",
+        RiscvFormat::U => "U",
+        RiscvFormat::J => "J",
+        RiscvFormat::F => "F",
+        RiscvFormat::Invalid => "INVALID",
+        RiscvFormat::Unsupported => "INVALID",
+    }
+}
+
+fn rv64im_opcode_name(opcode: RiscvOpcode) -> &'static str {
+    match opcode {
+        RiscvOpcode::Lui => "lui",
+        RiscvOpcode::Auipc => "auipc",
+        RiscvOpcode::Jal => "jal",
+        RiscvOpcode::Jalr => "jalr",
+        RiscvOpcode::Fence => "fence",
+        RiscvOpcode::Add => "add",
+        RiscvOpcode::Sub => "sub",
+        RiscvOpcode::Sll => "sll",
+        RiscvOpcode::Slt => "slt",
+        RiscvOpcode::Sltu => "sltu",
+        RiscvOpcode::Xor => "xor",
+        RiscvOpcode::Srl => "srl",
+        RiscvOpcode::Sra => "sra",
+        RiscvOpcode::Or => "or",
+        RiscvOpcode::And => "and",
+        RiscvOpcode::Addw => "addw",
+        RiscvOpcode::Subw => "subw",
+        RiscvOpcode::Sllw => "sllw",
+        RiscvOpcode::Srlw => "srlw",
+        RiscvOpcode::Sraw => "sraw",
+        RiscvOpcode::Mul => "mul",
+        RiscvOpcode::Mulh => "mulh",
+        RiscvOpcode::Mulhsu => "mulhsu",
+        RiscvOpcode::Mulhu => "mulhu",
+        RiscvOpcode::Mulw => "mulw",
+        RiscvOpcode::Div => "div",
+        RiscvOpcode::Divu => "divu",
+        RiscvOpcode::Divw => "divw",
+        RiscvOpcode::Divuw => "divuw",
+        RiscvOpcode::Rem => "rem",
+        RiscvOpcode::Remu => "remu",
+        RiscvOpcode::Remw => "remw",
+        RiscvOpcode::Remuw => "remuw",
+        RiscvOpcode::Addi => "addi",
+        RiscvOpcode::Slli => "slli",
+        RiscvOpcode::Slti => "slti",
+        RiscvOpcode::Sltiu => "sltiu",
+        RiscvOpcode::Xori => "xori",
+        RiscvOpcode::Srli => "srli",
+        RiscvOpcode::Srai => "srai",
+        RiscvOpcode::Ori => "ori",
+        RiscvOpcode::Andi => "andi",
+        RiscvOpcode::Addiw => "addiw",
+        RiscvOpcode::Slliw => "slliw",
+        RiscvOpcode::Srliw => "srliw",
+        RiscvOpcode::Sraiw => "sraiw",
+        RiscvOpcode::Beq => "beq",
+        RiscvOpcode::Bne => "bne",
+        RiscvOpcode::Blt => "blt",
+        RiscvOpcode::Bge => "bge",
+        RiscvOpcode::Bltu => "bltu",
+        RiscvOpcode::Bgeu => "bgeu",
+        RiscvOpcode::Lb => "lb",
+        RiscvOpcode::Lbu => "lbu",
+        RiscvOpcode::Lh => "lh",
+        RiscvOpcode::Lhu => "lhu",
+        RiscvOpcode::Lw => "lw",
+        RiscvOpcode::Lwu => "lwu",
+        RiscvOpcode::Ld => "ld",
+        RiscvOpcode::Sb => "sb",
+        RiscvOpcode::Sh => "sh",
+        RiscvOpcode::Sw => "sw",
+        RiscvOpcode::Sd => "sd",
+        RiscvOpcode::Reserved => "reserved",
+        RiscvOpcode::Unsupported => "reserved",
+    }
+}
+
+fn riscv_instruction_from_rv64im_decode(
+    inst: u32,
+    rom_address: u64,
+    decoded: DecodedRv64im,
+) -> RiscvInstruction {
+    RiscvInstruction {
+        rom_address,
+        rvinst: inst,
+        t: rv64im_format_name(decoded.format).to_string(),
+        inst: rv64im_opcode_name(decoded.opcode).to_string(),
+        funct3: decoded.funct3,
+        funct7: decoded.funct7,
+        rd: decoded.rd,
+        rs1: decoded.rs1,
+        rs2: decoded.rs2,
+        imm: decoded.imm,
+        pred: decoded.pred,
+        succ: decoded.succ,
+        ..Default::default()
+    }
+}
+
 fn riscv_get_instruction_32(inst: u32, root_address: u64, code_index: usize) -> RiscvInstruction {
+    let decoded = decode_32_core(inst);
+    if decoded.format != RiscvFormat::Unsupported {
+        return riscv_instruction_from_rv64im_decode(
+            inst,
+            root_address + (code_index * 2) as u64,
+            decoded,
+        );
+    }
+    riscv_get_instruction_32_legacy(inst, root_address, code_index)
+}
+
+fn riscv_get_instruction_32_legacy(
+    inst: u32,
+    root_address: u64,
+    code_index: usize,
+) -> RiscvInstruction {
     // Get the instruction type and name from the RVD data
     let (inst_type, inst_name, level) = Rvd::get_type_and_name_32_bits(inst);
 

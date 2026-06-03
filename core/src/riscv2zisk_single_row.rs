@@ -4,6 +4,25 @@ use zisk_definitions::{SYSCALL_DMA_MEMCMP_ID, SYSCALL_DMA_MEMCPY_ID};
 
 use crate::{riscv2zisk_context::Riscv2ZiskContext, zisk_ops::ZiskOp};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rv64imLoweringInput {
+    pub rom_address: u64,
+    pub rd: u32,
+    pub rs1: u32,
+    pub rs2: u32,
+    pub imm: i32,
+}
+
+impl Rv64imLoweringInput {
+    pub fn from_riscv(i: &RiscvInstruction) -> Self {
+        Self { rom_address: i.rom_address, rd: i.rd, rs1: i.rs1, rs2: i.rs2, imm: i.imm }
+    }
+
+    pub fn new(rom_address: u64, rd: u32, rs1: u32, rs2: u32, imm: i32) -> Self {
+        Self { rom_address, rd, rs1, rs2, imm }
+    }
+}
+
 #[cfg(not(feature = "aeneas_extract"))]
 const CSR_DMA_MEMCPY_ADDR: u32 = SYSCALL_DMA_MEMCPY_ID as u32;
 #[cfg(feature = "aeneas_extract")]
@@ -158,6 +177,16 @@ impl Riscv2ZiskContext<'_> {
         opcode: Rv64imSingleRowOpcode,
         next_instructions: &[RiscvInstruction],
     ) {
+        let input = Rv64imLoweringInput::from_riscv(riscv_instruction);
+        self.lower_rv64im_single_row_input(&input, opcode, next_instructions.len() != 0);
+    }
+
+    pub fn lower_rv64im_single_row_input(
+        &mut self,
+        riscv_instruction: &Rv64imLoweringInput,
+        opcode: Rv64imSingleRowOpcode,
+        has_next_instruction: bool,
+    ) {
         match opcode {
             Rv64imSingleRowOpcode::Lui => self.lui(riscv_instruction, 4),
             Rv64imSingleRowOpcode::Auipc => self.auipc(riscv_instruction),
@@ -188,7 +217,7 @@ impl Riscv2ZiskContext<'_> {
                         4,
                     );
                 } else if riscv_instruction.rs1 == 0 {
-                    if !next_instructions.is_empty() {
+                    if has_next_instruction {
                         self.copyb(riscv_instruction, 4, 2);
                     } else {
                         self.copyb(riscv_instruction, 4, 2);
