@@ -278,3 +278,103 @@ store_extract!(extract_sb_from_inst, Rv64imSingleRowOpcode::Sb);
 store_extract!(extract_sh_from_inst, Rv64imSingleRowOpcode::Sh);
 store_extract!(extract_sw_from_inst, Rv64imSingleRowOpcode::Sw);
 store_extract!(extract_sd_from_inst, Rv64imSingleRowOpcode::Sd);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type ExtractStart = fn(&RiscvInstruction) -> ZiskInstExtract;
+
+    fn sample_inst(mnemonic: &str) -> RiscvInstruction {
+        let mut i = make_riscv_instruction(16, 3, 5, 7, 4096);
+        i.inst = mnemonic.to_owned();
+        i
+    }
+
+    fn convert_single_row(i: &RiscvInstruction) -> ZiskInstExtract {
+        let mut ctx = Riscv2ZiskContext {
+            extract_inst: None,
+            extract_marker: PhantomData,
+            input_precompile: None,
+            output_precompile: None,
+            input_precompile_reg: None,
+            output_precompile_reg: None,
+        };
+        ctx.convert(i, &[]);
+        ZiskInstExtract::from_inst(&ctx.extract_inst.unwrap().i)
+    }
+
+    #[test]
+    fn extraction_starts_match_production_convert_for_single_row_opcodes() {
+        let cases: &[(&str, ExtractStart)] = &[
+            ("lui", extract_lui_from_inst),
+            ("auipc", extract_auipc_from_inst),
+            ("jal", extract_jal_from_inst),
+            ("jalr", extract_jalr_from_inst),
+            ("fence", extract_fence_from_inst),
+            ("add", extract_add_from_inst),
+            ("sub", extract_sub_from_inst),
+            ("sll", extract_sll_from_inst),
+            ("slt", extract_slt_from_inst),
+            ("sltu", extract_sltu_from_inst),
+            ("xor", extract_xor_from_inst),
+            ("srl", extract_srl_from_inst),
+            ("sra", extract_sra_from_inst),
+            ("or", extract_or_from_inst),
+            ("and", extract_and_from_inst),
+            ("addw", extract_addw_from_inst),
+            ("subw", extract_subw_from_inst),
+            ("sllw", extract_sllw_from_inst),
+            ("srlw", extract_srlw_from_inst),
+            ("sraw", extract_sraw_from_inst),
+            ("mul", extract_mul_from_inst),
+            ("mulh", extract_mulh_from_inst),
+            ("mulhsu", extract_mulhsu_from_inst),
+            ("mulhu", extract_mulhu_from_inst),
+            ("mulw", extract_mulw_from_inst),
+            ("div", extract_div_from_inst),
+            ("divu", extract_divu_from_inst),
+            ("divw", extract_divw_from_inst),
+            ("divuw", extract_divuw_from_inst),
+            ("rem", extract_rem_from_inst),
+            ("remu", extract_remu_from_inst),
+            ("remw", extract_remw_from_inst),
+            ("remuw", extract_remuw_from_inst),
+            ("addi", extract_addi_from_inst),
+            ("slli", extract_slli_from_inst),
+            ("slti", extract_slti_from_inst),
+            ("sltiu", extract_sltiu_from_inst),
+            ("xori", extract_xori_from_inst),
+            ("srli", extract_srli_from_inst),
+            ("srai", extract_srai_from_inst),
+            ("ori", extract_ori_from_inst),
+            ("andi", extract_andi_from_inst),
+            ("addiw", extract_addiw_from_inst),
+            ("slliw", extract_slliw_from_inst),
+            ("srliw", extract_srliw_from_inst),
+            ("sraiw", extract_sraiw_from_inst),
+            ("beq", extract_beq_from_inst),
+            ("bne", extract_bne_from_inst),
+            ("blt", extract_blt_from_inst),
+            ("bge", extract_bge_from_inst),
+            ("bltu", extract_bltu_from_inst),
+            ("bgeu", extract_bgeu_from_inst),
+            ("lb", extract_lb_from_inst),
+            ("lbu", extract_lbu_from_inst),
+            ("lh", extract_lh_from_inst),
+            ("lhu", extract_lhu_from_inst),
+            ("lw", extract_lw_from_inst),
+            ("lwu", extract_lwu_from_inst),
+            ("ld", extract_ld_from_inst),
+            ("sb", extract_sb_from_inst),
+            ("sh", extract_sh_from_inst),
+            ("sw", extract_sw_from_inst),
+            ("sd", extract_sd_from_inst),
+        ];
+
+        for (mnemonic, extract) in cases {
+            let i = sample_inst(mnemonic);
+            assert_eq!(extract(&i), convert_single_row(&i), "{mnemonic}");
+        }
+    }
+}
