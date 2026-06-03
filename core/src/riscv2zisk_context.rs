@@ -16,9 +16,10 @@ use zisk_definitions::{
 };
 
 use crate::{
-    convert_vector, zisk_ops::ZiskOp, ZiskInstBuilder, ZiskRom, ARCH_ID_CSR_ADDR, ARCH_ID_ZISK,
-    CSR_ADDR, EXTRA_PARAMS_ADDR, FLOAT_LIB_ROM_ADDR, FLOAT_LIB_SP, FREG_F0, FREG_INST, FREG_RA,
-    FREG_X0, INPUT_ADDR, MAX_ZISK_OS_ROM_ADDR, MTVEC, OUTPUT_ADDR, REG_X0, ROM_ENTRY, ROM_EXIT,
+    convert_vector, riscv2zisk_single_row::Rv64imSingleRowOpcode, zisk_ops::ZiskOp,
+    ZiskInstBuilder, ZiskRom, ARCH_ID_CSR_ADDR, ARCH_ID_ZISK, CSR_ADDR, EXTRA_PARAMS_ADDR,
+    FLOAT_LIB_ROM_ADDR, FLOAT_LIB_SP, FREG_F0, FREG_INST, FREG_RA, FREG_X0, INPUT_ADDR,
+    MAX_ZISK_OS_ROM_ADDR, MTVEC, OUTPUT_ADDR, REG_X0, ROM_ENTRY, ROM_EXIT,
 };
 
 #[cfg(not(feature = "aeneas_extract"))]
@@ -59,14 +60,6 @@ const CSR_PRECOMPILED: [&str; 27] = [
     "profile",
 ];
 const CSR_PRECOMPILED_ADDR_START: u16 = SYSCALL_KECCAKF_ID;
-#[cfg(not(feature = "aeneas_extract"))]
-const CSR_DMA_MEMCPY_ADDR: u32 = SYSCALL_DMA_MEMCPY_ID as u32;
-#[cfg(feature = "aeneas_extract")]
-const CSR_DMA_MEMCPY_ADDR: u32 = 0x813;
-#[cfg(not(feature = "aeneas_extract"))]
-const CSR_DMA_MEMCMP_ADDR: u32 = SYSCALL_DMA_MEMCMP_ID as u32;
-#[cfg(feature = "aeneas_extract")]
-const CSR_DMA_MEMCMP_ADDR: u32 = 0x814;
 const CSR_FCALL_ADDR_START: u16 = 0x8C0;
 const CSR_FCALL_ADDR_END: u16 = 0x8DF;
 const CSR_FCALL_GET_ADDR: u16 = 0xFFE;
@@ -79,73 +72,6 @@ const CAUSE_EXIT: u64 = 93;
 const M64: u64 = 0xFFFFFFFFFFFFFFFF;
 const FLOAT_HANDLER_ADDR: u64 = 0x1008;
 const FLOAT_HANDLER_RETURN_ADDR: u64 = FLOAT_HANDLER_ADDR + 4 * 34; // 31 regs + set sp + set ra + jump to zisk_float
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Rv64imSingleRowOpcode {
-    Lui,
-    Auipc,
-    Jal,
-    Jalr,
-    Fence,
-    Add,
-    Sub,
-    Sll,
-    Slt,
-    Sltu,
-    Xor,
-    Srl,
-    Sra,
-    Or,
-    And,
-    Addw,
-    Subw,
-    Sllw,
-    Srlw,
-    Sraw,
-    Mul,
-    Mulh,
-    Mulhsu,
-    Mulhu,
-    Mulw,
-    Div,
-    Divu,
-    Divw,
-    Divuw,
-    Rem,
-    Remu,
-    Remw,
-    Remuw,
-    Addi,
-    Slli,
-    Slti,
-    Sltiu,
-    Xori,
-    Srli,
-    Srai,
-    Ori,
-    Andi,
-    Addiw,
-    Slliw,
-    Srliw,
-    Sraiw,
-    Beq,
-    Bne,
-    Blt,
-    Bge,
-    Bltu,
-    Bgeu,
-    Lb,
-    Lbu,
-    Lh,
-    Lhu,
-    Lw,
-    Lwu,
-    Ld,
-    Sb,
-    Sh,
-    Sw,
-    Sd,
-}
 
 /// Context to store the list of converted ZisK instructions, including their program address and a
 /// map to store the instructions
@@ -177,232 +103,6 @@ impl Riscv2ZiskContext<'_> {
         self.extract_inst = Some(zib);
     }
 
-    pub fn lower_rv64im_single_row(
-        &mut self,
-        riscv_instruction: &RiscvInstruction,
-        opcode: Rv64imSingleRowOpcode,
-        next_instructions: &[RiscvInstruction],
-    ) {
-        match opcode {
-            Rv64imSingleRowOpcode::Lui => self.lui(riscv_instruction, 4),
-            Rv64imSingleRowOpcode::Auipc => self.auipc(riscv_instruction),
-            Rv64imSingleRowOpcode::Jal => self.jal(riscv_instruction, 4),
-            Rv64imSingleRowOpcode::Jalr => self.jalr(riscv_instruction, 4),
-            Rv64imSingleRowOpcode::Fence => self.nop(riscv_instruction, 4),
-            Rv64imSingleRowOpcode::Add => {
-                let input_precompile = match self.input_precompile {
-                    Some(precompile) => precompile,
-                    None => 0,
-                };
-                if riscv_instruction.rd == 0 && input_precompile == CSR_DMA_MEMCPY_ADDR {
-                    let input_precompile_reg = self.input_precompile_reg.unwrap();
-                    self.create_precompiles_op_zisk(
-                        riscv_instruction,
-                        ZiskOp::DmaMemCpy,
-                        riscv_instruction.rs1,
-                        input_precompile_reg,
-                        4,
-                    );
-                } else if input_precompile == CSR_DMA_MEMCMP_ADDR {
-                    let input_precompile_reg = self.input_precompile_reg.unwrap();
-                    self.create_precompiles_op_zisk(
-                        riscv_instruction,
-                        ZiskOp::DmaMemCmp,
-                        riscv_instruction.rs1,
-                        input_precompile_reg,
-                        4,
-                    );
-                } else if riscv_instruction.rs1 == 0 {
-                    if !next_instructions.is_empty() {
-                        self.copyb(riscv_instruction, 4, 2);
-                    } else {
-                        self.copyb(riscv_instruction, 4, 2);
-                    }
-                } else if riscv_instruction.rs2 == 0 {
-                    self.copyb(riscv_instruction, 4, 1);
-                } else {
-                    self.create_register_op_zisk(riscv_instruction, ZiskOp::Add, 4);
-                }
-            }
-            Rv64imSingleRowOpcode::Sub => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Sub, 4)
-            }
-            Rv64imSingleRowOpcode::Sll => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Sll, 4)
-            }
-            Rv64imSingleRowOpcode::Slt => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Lt, 4)
-            }
-            Rv64imSingleRowOpcode::Sltu => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Ltu, 4)
-            }
-            Rv64imSingleRowOpcode::Xor => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Xor, 4)
-            }
-            Rv64imSingleRowOpcode::Srl => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Srl, 4)
-            }
-            Rv64imSingleRowOpcode::Sra => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Sra, 4)
-            }
-            Rv64imSingleRowOpcode::Or => {
-                if riscv_instruction.rs1 == 0 {
-                    self.copyb(riscv_instruction, 4, 2);
-                } else if riscv_instruction.rs2 == 0 {
-                    self.copyb(riscv_instruction, 4, 1);
-                } else {
-                    self.create_register_op_zisk(riscv_instruction, ZiskOp::Or, 4);
-                }
-            }
-            Rv64imSingleRowOpcode::And => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::And, 4)
-            }
-            Rv64imSingleRowOpcode::Addw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::AddW, 4)
-            }
-            Rv64imSingleRowOpcode::Subw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::SubW, 4)
-            }
-            Rv64imSingleRowOpcode::Sllw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::SllW, 4)
-            }
-            Rv64imSingleRowOpcode::Srlw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::SrlW, 4)
-            }
-            Rv64imSingleRowOpcode::Sraw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::SraW, 4)
-            }
-            Rv64imSingleRowOpcode::Mul => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Mul, 4)
-            }
-            Rv64imSingleRowOpcode::Mulh => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Mulh, 4)
-            }
-            Rv64imSingleRowOpcode::Mulhsu => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Mulsuh, 4)
-            }
-            Rv64imSingleRowOpcode::Mulhu => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Muluh, 4)
-            }
-            Rv64imSingleRowOpcode::Mulw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::MulW, 4)
-            }
-            Rv64imSingleRowOpcode::Div => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Div, 4)
-            }
-            Rv64imSingleRowOpcode::Divu => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Divu, 4)
-            }
-            Rv64imSingleRowOpcode::Divw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::DivW, 4)
-            }
-            Rv64imSingleRowOpcode::Divuw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::DivuW, 4)
-            }
-            Rv64imSingleRowOpcode::Rem => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Rem, 4)
-            }
-            Rv64imSingleRowOpcode::Remu => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::Remu, 4)
-            }
-            Rv64imSingleRowOpcode::Remw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::RemW, 4)
-            }
-            Rv64imSingleRowOpcode::Remuw => {
-                self.create_register_op_zisk(riscv_instruction, ZiskOp::RemuW, 4)
-            }
-            Rv64imSingleRowOpcode::Addi => {
-                if riscv_instruction.rd == 0 {
-                    if riscv_instruction.rs1 == 0 && riscv_instruction.rs2 == 0 {
-                        self.nop(riscv_instruction, 4);
-                    } else {
-                        self.hint(riscv_instruction, 4);
-                    }
-                } else if riscv_instruction.imm == 0 && riscv_instruction.rs1 != 0 {
-                    self.copyb(riscv_instruction, 4, 1);
-                } else {
-                    self.immediate_op_or_x0_copyb_zisk(riscv_instruction, ZiskOp::Add, 4);
-                }
-            }
-            Rv64imSingleRowOpcode::Slli => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::Sll, 4)
-            }
-            Rv64imSingleRowOpcode::Slti => self.immediate_op_zisk(riscv_instruction, ZiskOp::Lt, 4),
-            Rv64imSingleRowOpcode::Sltiu => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::Ltu, 4)
-            }
-            Rv64imSingleRowOpcode::Xori => {
-                self.immediate_op_or_x0_copyb_zisk(riscv_instruction, ZiskOp::Xor, 4)
-            }
-            Rv64imSingleRowOpcode::Srli => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::Srl, 4)
-            }
-            Rv64imSingleRowOpcode::Srai => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::Sra, 4)
-            }
-            Rv64imSingleRowOpcode::Ori => {
-                self.immediate_op_or_x0_copyb_zisk(riscv_instruction, ZiskOp::Or, 4)
-            }
-            Rv64imSingleRowOpcode::Andi => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::And, 4)
-            }
-            Rv64imSingleRowOpcode::Addiw => {
-                if riscv_instruction.rd == 0
-                    && riscv_instruction.rs1 == 0
-                    && riscv_instruction.imm == 0
-                {
-                    self.nop(riscv_instruction, 4);
-                } else {
-                    self.immediate_op_zisk(riscv_instruction, ZiskOp::AddW, 4);
-                }
-            }
-            Rv64imSingleRowOpcode::Slliw => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::SllW, 4)
-            }
-            Rv64imSingleRowOpcode::Srliw => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::SrlW, 4)
-            }
-            Rv64imSingleRowOpcode::Sraiw => {
-                self.immediate_op_zisk(riscv_instruction, ZiskOp::SraW, 4)
-            }
-            Rv64imSingleRowOpcode::Beq => {
-                self.create_branch_op_zisk(riscv_instruction, ZiskOp::Eq, false, 4)
-            }
-            Rv64imSingleRowOpcode::Bne => {
-                self.create_branch_op_zisk(riscv_instruction, ZiskOp::Eq, true, 4)
-            }
-            Rv64imSingleRowOpcode::Blt => {
-                self.create_branch_op_zisk(riscv_instruction, ZiskOp::Lt, false, 4)
-            }
-            Rv64imSingleRowOpcode::Bge => {
-                self.create_branch_op_zisk(riscv_instruction, ZiskOp::Lt, true, 4)
-            }
-            Rv64imSingleRowOpcode::Bltu => {
-                self.create_branch_op_zisk(riscv_instruction, ZiskOp::Ltu, false, 4)
-            }
-            Rv64imSingleRowOpcode::Bgeu => {
-                self.create_branch_op_zisk(riscv_instruction, ZiskOp::Ltu, true, 4)
-            }
-            Rv64imSingleRowOpcode::Lb => {
-                self.load_op_zisk(riscv_instruction, ZiskOp::SignExtendB, 1, 4)
-            }
-            Rv64imSingleRowOpcode::Lbu => self.load_op_zisk(riscv_instruction, ZiskOp::CopyB, 1, 4),
-            Rv64imSingleRowOpcode::Lh => {
-                self.load_op_zisk(riscv_instruction, ZiskOp::SignExtendH, 2, 4)
-            }
-            Rv64imSingleRowOpcode::Lhu => self.load_op_zisk(riscv_instruction, ZiskOp::CopyB, 2, 4),
-            Rv64imSingleRowOpcode::Lw => {
-                self.load_op_zisk(riscv_instruction, ZiskOp::SignExtendW, 4, 4)
-            }
-            Rv64imSingleRowOpcode::Lwu => self.load_op_zisk(riscv_instruction, ZiskOp::CopyB, 4, 4),
-            Rv64imSingleRowOpcode::Ld => self.load_op_zisk(riscv_instruction, ZiskOp::CopyB, 8, 4),
-            Rv64imSingleRowOpcode::Sb => self.store_op_zisk(riscv_instruction, ZiskOp::CopyB, 1, 4),
-            Rv64imSingleRowOpcode::Sh => self.store_op_zisk(riscv_instruction, ZiskOp::CopyB, 2, 4),
-            Rv64imSingleRowOpcode::Sw => self.store_op_zisk(riscv_instruction, ZiskOp::CopyB, 4, 4),
-            Rv64imSingleRowOpcode::Sd => self.store_op_zisk(riscv_instruction, ZiskOp::CopyB, 8, 4),
-        }
-    }
-
     /// Converts an input RISCV instruction into a ZisK instruction and stores it into the internal
     /// map.  C instrucions are already expanded into their equivalent RISCV instructions, so we
     /// only have to map them to their corresponding IMA 32-bits equivalent instructions.
@@ -421,268 +121,136 @@ impl Riscv2ZiskContext<'_> {
             //////////////////////////////////
 
             // I.1. Integer Computational (Register-Register)
-            "add" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Add,
-                next_instructions,
-            ),
-            "sub" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sub,
-                next_instructions,
-            ),
-            "sll" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sll,
-                next_instructions,
-            ),
-            "slt" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Slt,
-                next_instructions,
-            ),
-            "sltu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sltu,
-                next_instructions,
-            ),
-            "xor" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Xor,
-                next_instructions,
-            ),
-            "srl" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Srl,
-                next_instructions,
-            ),
-            "sra" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sra,
-                next_instructions,
-            ),
-            "or" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Or,
-                next_instructions,
-            ),
-            "and" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::And,
-                next_instructions,
-            ),
-            "addw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Addw,
-                next_instructions,
-            ),
-            "subw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Subw,
-                next_instructions,
-            ),
-            "sllw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sllw,
-                next_instructions,
-            ),
-            "srlw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Srlw,
-                next_instructions,
-            ),
-            "sraw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sraw,
-                next_instructions,
-            ),
+            "add" => {
+                if riscv_instruction.rd == 0
+                    && self.input_precompile == Some(SYSCALL_DMA_MEMCPY_ID as u32)
+                {
+                    self.create_precompiled_op(
+                        riscv_instruction,
+                        "dma_memcpy",
+                        riscv_instruction.rs1,
+                        self.input_precompile_reg.unwrap(),
+                        4,
+                    );
+                } else if self.input_precompile == Some(SYSCALL_DMA_MEMCMP_ID as u32) {
+                    self.create_precompiled_op(
+                        riscv_instruction,
+                        "dma_memcmp",
+                        riscv_instruction.rs1,
+                        self.input_precompile_reg.unwrap(),
+                        4,
+                    );
+                } else if riscv_instruction.rs1 == 0 {
+                    if !next_instructions.is_empty() {
+                        // rd = rs1(0) + rs2 = rs2 followed by ret
+                        self.copyb(riscv_instruction, 4, 2);
+                    } else {
+                        // rd = rs1(0) + rs2 = rs2
+                        self.copyb(riscv_instruction, 4, 2);
+                    }
+                } else if riscv_instruction.rs2 == 0 {
+                    // rd = rs1 + rs2(0) = rs1
+                    self.copyb(riscv_instruction, 4, 1);
+                } else {
+                    self.create_register_op(riscv_instruction, "add", 4);
+                }
+            }
+            "sub" => self.create_register_op(riscv_instruction, "sub", 4),
+            "sll" => self.create_register_op(riscv_instruction, "sll", 4),
+            "slt" => self.create_register_op(riscv_instruction, "lt", 4),
+            "sltu" => self.create_register_op(riscv_instruction, "ltu", 4),
+            "xor" => self.create_register_op(riscv_instruction, "xor", 4),
+            "srl" => self.create_register_op(riscv_instruction, "srl", 4),
+            "sra" => self.create_register_op(riscv_instruction, "sra", 4),
+            "or" => {
+                if riscv_instruction.rs1 == 0 {
+                    // rd = rs1(0) | rs2 = rs2
+                    self.copyb(riscv_instruction, 4, 2);
+                } else if riscv_instruction.rs2 == 0 {
+                    // rd = rs1 | rs2(0) = rs1
+                    self.copyb(riscv_instruction, 4, 1);
+                } else {
+                    self.create_register_op(riscv_instruction, "or", 4);
+                }
+            }
+            "and" => self.create_register_op(riscv_instruction, "and", 4),
+            "addw" => self.create_register_op(riscv_instruction, "add_w", 4),
+            "subw" => self.create_register_op(riscv_instruction, "sub_w", 4),
+            "sllw" => self.create_register_op(riscv_instruction, "sll_w", 4),
+            "srlw" => self.create_register_op(riscv_instruction, "srl_w", 4),
+            "sraw" => self.create_register_op(riscv_instruction, "sra_w", 4),
 
             // I.2. Integer Computational (Register-Immediate)
-            "addi" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Addi,
-                next_instructions,
-            ),
-            "slli" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Slli,
-                next_instructions,
-            ),
-            "slti" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Slti,
-                next_instructions,
-            ),
-            "sltiu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sltiu,
-                next_instructions,
-            ),
-            "xori" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Xori,
-                next_instructions,
-            ),
-            "srli" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Srli,
-                next_instructions,
-            ),
-            "srai" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Srai,
-                next_instructions,
-            ),
-            "ori" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Ori,
-                next_instructions,
-            ),
-            "andi" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Andi,
-                next_instructions,
-            ),
-            "auipc" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Auipc,
-                next_instructions,
-            ),
-            "addiw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Addiw,
-                next_instructions,
-            ),
-            "slliw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Slliw,
-                next_instructions,
-            ),
-            "srliw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Srliw,
-                next_instructions,
-            ),
-            "sraiw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sraiw,
-                next_instructions,
-            ),
+            "addi" => {
+                if riscv_instruction.rd == 0 {
+                    if riscv_instruction.rs1 == 0 && riscv_instruction.rs2 == 0 {
+                        // r0 = r0 + imm(0) = 0
+                        self.nop(riscv_instruction, 4);
+                    } else {
+                        self.hint(riscv_instruction, 4);
+                    }
+                } else if riscv_instruction.imm == 0 && riscv_instruction.rs1 != 0 {
+                    // rd = rs1 + imm(0) = rs1
+                    self.copyb(riscv_instruction, 4, 1);
+                } else {
+                    self.immediate_op_or_x0_copyb(riscv_instruction, "add", 4);
+                }
+            }
+            "slli" => self.immediate_op(riscv_instruction, "sll", 4),
+            "slti" => self.immediate_op(riscv_instruction, "lt", 4),
+            "sltiu" => self.immediate_op(riscv_instruction, "ltu", 4),
+            "xori" => self.immediate_op_or_x0_copyb(riscv_instruction, "xor", 4),
+            "srli" => self.immediate_op(riscv_instruction, "srl", 4),
+            "srai" => self.immediate_op(riscv_instruction, "sra", 4),
+            "ori" => self.immediate_op_or_x0_copyb(riscv_instruction, "or", 4),
+            "andi" => self.immediate_op(riscv_instruction, "and", 4),
+            "auipc" => self.auipc(riscv_instruction),
+            "addiw" => {
+                if riscv_instruction.rd == 0
+                    && riscv_instruction.rs1 == 0
+                    && riscv_instruction.imm == 0
+                {
+                    // rd(0) = rs1(0) + imm(0) = 0
+                    self.nop(riscv_instruction, 4);
+                } else {
+                    self.immediate_op(riscv_instruction, "add_w", 4);
+                }
+            }
+            "slliw" => self.immediate_op(riscv_instruction, "sll_w", 4),
+            "srliw" => self.immediate_op(riscv_instruction, "srl_w", 4),
+            "sraiw" => self.immediate_op(riscv_instruction, "sra_w", 4),
 
             // I.3. Control Transfer Instructions
-            "jalr" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Jalr,
-                next_instructions,
-            ),
-            "jal" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Jal,
-                next_instructions,
-            ),
-            "beq" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Beq,
-                next_instructions,
-            ),
-            "bne" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Bne,
-                next_instructions,
-            ),
-            "blt" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Blt,
-                next_instructions,
-            ),
-            "bge" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Bge,
-                next_instructions,
-            ),
-            "bltu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Bltu,
-                next_instructions,
-            ),
-            "bgeu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Bgeu,
-                next_instructions,
-            ),
+            "jalr" => self.jalr(riscv_instruction, 4),
+            "jal" => self.jal(riscv_instruction, 4),
+            "beq" => self.create_branch_op(riscv_instruction, "eq", false, 4),
+            "bne" => self.create_branch_op(riscv_instruction, "eq", true, 4),
+            "blt" => self.create_branch_op(riscv_instruction, "lt", false, 4),
+            "bge" => self.create_branch_op(riscv_instruction, "lt", true, 4),
+            "bltu" => self.create_branch_op(riscv_instruction, "ltu", false, 4),
+            "bgeu" => self.create_branch_op(riscv_instruction, "ltu", true, 4),
 
             // I.4. Load and Store Instructions
-            "lb" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lb,
-                next_instructions,
-            ),
-            "lbu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lbu,
-                next_instructions,
-            ),
-            "lh" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lh,
-                next_instructions,
-            ),
-            "lhu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lhu,
-                next_instructions,
-            ),
-            "lw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lw,
-                next_instructions,
-            ),
-            "lwu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lwu,
-                next_instructions,
-            ),
-            "ld" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Ld,
-                next_instructions,
-            ),
+            "lb" => self.load_op(riscv_instruction, "signextend_b", 1, 4),
+            "lbu" => self.load_op(riscv_instruction, "copyb", 1, 4),
+            "lh" => self.load_op(riscv_instruction, "signextend_h", 2, 4),
+            "lhu" => self.load_op(riscv_instruction, "copyb", 2, 4),
+            "lw" => self.load_op(riscv_instruction, "signextend_w", 4, 4),
+            "lwu" => self.load_op(riscv_instruction, "copyb", 4, 4),
+            "ld" => self.load_op(riscv_instruction, "copyb", 8, 4),
             "lr.w" => self.load_op(riscv_instruction, "signextend_w", 4, 4),
             "lr.d" => self.load_op(riscv_instruction, "copyb", 8, 4),
-            "lui" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Lui,
-                next_instructions,
-            ),
-            "sb" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sb,
-                next_instructions,
-            ),
-            "sh" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sh,
-                next_instructions,
-            ),
-            "sw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sw,
-                next_instructions,
-            ),
-            "sd" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Sd,
-                next_instructions,
-            ),
+            "lui" => self.lui(riscv_instruction, 4),
+            "sb" => self.store_op(riscv_instruction, "copyb", 1, 4),
+            "sh" => self.store_op(riscv_instruction, "copyb", 2, 4),
+            "sw" => self.store_op(riscv_instruction, "copyb", 4, 4),
+            "sd" => self.store_op(riscv_instruction, "copyb", 8, 4),
             "sc.w" => self.sc_w(riscv_instruction),
             "sc.d" => self.sc_d(riscv_instruction),
 
             // I.5. Memory Ordering & Fence Instructions
-            "fence" | "fence.i" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Fence,
-                next_instructions,
-            ),
+            "fence" => self.nop(riscv_instruction, 4),
+            "fence.i" => self.nop(riscv_instruction, 4),
 
             // I.6 Privileged & System Instructions (Part of I Base)
             "ecall" => self.ecall(riscv_instruction),
@@ -696,71 +264,19 @@ impl Riscv2ZiskContext<'_> {
 
             // M: Integer Multiplication and Division
             /////////////////////////////////////////
-            "mul" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Mul,
-                next_instructions,
-            ),
-            "mulh" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Mulh,
-                next_instructions,
-            ),
-            "mulhsu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Mulhsu,
-                next_instructions,
-            ),
-            "mulhu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Mulhu,
-                next_instructions,
-            ),
-            "mulw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Mulw,
-                next_instructions,
-            ),
-            "div" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Div,
-                next_instructions,
-            ),
-            "divu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Divu,
-                next_instructions,
-            ),
-            "divw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Divw,
-                next_instructions,
-            ),
-            "divuw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Divuw,
-                next_instructions,
-            ),
-            "rem" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Rem,
-                next_instructions,
-            ),
-            "remu" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Remu,
-                next_instructions,
-            ),
-            "remw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Remw,
-                next_instructions,
-            ),
-            "remuw" => self.lower_rv64im_single_row(
-                riscv_instruction,
-                Rv64imSingleRowOpcode::Remuw,
-                next_instructions,
-            ),
+            "mul" => self.create_register_op(riscv_instruction, "mul", 4),
+            "mulh" => self.create_register_op(riscv_instruction, "mulh", 4),
+            "mulhsu" => self.create_register_op(riscv_instruction, "mulsuh", 4),
+            "mulhu" => self.create_register_op(riscv_instruction, "muluh", 4),
+            "mulw" => self.create_register_op(riscv_instruction, "mul_w", 4),
+            "div" => self.create_register_op(riscv_instruction, "div", 4),
+            "divu" => self.create_register_op(riscv_instruction, "divu", 4),
+            "divw" => self.create_register_op(riscv_instruction, "div_w", 4),
+            "divuw" => self.create_register_op(riscv_instruction, "divu_w", 4),
+            "rem" => self.create_register_op(riscv_instruction, "rem", 4),
+            "remu" => self.create_register_op(riscv_instruction, "remu", 4),
+            "remw" => self.create_register_op(riscv_instruction, "rem_w", 4),
+            "remuw" => self.create_register_op(riscv_instruction, "remu_w", 4),
 
             // A: Atomic Instructions
             /////////////////////////
@@ -1137,11 +653,25 @@ impl Riscv2ZiskContext<'_> {
     /// loads both input parameters a and b from their respective registers,
     /// and stores the result c into a register
     pub fn create_register_op(&mut self, i: &RiscvInstruction, op: &str, inst_size: u64) {
-        let op = ZiskOp::try_from_name(op).unwrap();
-        self.create_register_op_zisk(i, op, inst_size);
+        if inst_size == 4 {
+            if let Some(opcode) = Rv64imSingleRowOpcode::from_inst_name(i.inst.as_str()) {
+                self.lower_rv64im_single_row(i, opcode, &[]);
+                return;
+            }
+        }
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", i.rs1 as u64, false);
+        zib.src_b("reg", i.rs2 as u64, false);
+        zib.op(op).unwrap();
+        zib.store("reg", i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.verbose(&format!("{} r{}, r{}, r{}", i.inst, i.rd, i.rs1, i.rs2));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn create_register_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, inst_size: u64) {
+    pub fn create_register_op_typed(&mut self, i: &RiscvInstruction, op: ZiskOp, inst_size: u64) {
         assert!(inst_size == 2 || inst_size == 4);
         let mut zib = ZiskInstBuilder::new_for_riscv(i);
         zib.src_a_reg(i.rs1 as u64, false);
@@ -1167,11 +697,24 @@ impl Riscv2ZiskContext<'_> {
         rs2: u32,
         inst_size: u64,
     ) {
-        let op_zisk = ZiskOp::try_from_name(op).unwrap();
-        self.create_precompiles_op_zisk(i, op_zisk, rs1, rs2, inst_size);
+        // inst_size == 8 used for special cases where take arguments of precompiled of
+        // next instruction but no need to read again
+        assert!(inst_size == 2 || inst_size == 4 || inst_size == 8);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", rs1 as u64, false);
+        zib.src_b("reg", rs2 as u64, false);
+        zib.op(op).unwrap();
+        zib.store("reg", i.rd as i64, false, false);
+        zib.j(0, inst_size as i64);
+        zib.verbose(&format!(
+            "{} r{}, r{}, r{} => {} r{}, r{rs1}, r{rs2}",
+            i.inst, i.rd, i.rs1, i.rs2, op, i.rd
+        ));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn create_precompiles_op_zisk(
+    pub fn create_precompiled_op_typed(
         &mut self,
         i: &RiscvInstruction,
         op: ZiskOp,
@@ -1220,7 +763,7 @@ impl Riscv2ZiskContext<'_> {
         // inst_size == 8 used for special cases where take arguments of precompiled of
         // next instruction but no need to read again
         assert!(inst_size == 2 || inst_size == 4 || inst_size == 8);
-        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
         zib.src_a("reg", rs1 as u64, false);
         if is_rs2_an_imm {
             zib.src_b("imm", rs2, false);
@@ -1250,7 +793,7 @@ impl Riscv2ZiskContext<'_> {
         inst_size: u64,
     ) {
         assert!(inst_size == 2 || inst_size == 4);
-        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
         zib.src_a("imm", 0, false);
         zib.src_b("reg", rs1 as u64, false);
         zib.op("copyb").unwrap();
@@ -1270,11 +813,28 @@ impl Riscv2ZiskContext<'_> {
     /// jumps to another operation, or continues the normal execution, based on a condition
     /// specifies by the operation
     pub fn create_branch_op(&mut self, i: &RiscvInstruction, op: &str, neg: bool, inst_size: u64) {
-        let op = ZiskOp::try_from_name(op).unwrap();
-        self.create_branch_op_zisk(i, op, neg, inst_size);
+        if inst_size == 4 {
+            if let Some(opcode) = Rv64imSingleRowOpcode::from_inst_name(i.inst.as_str()) {
+                self.lower_rv64im_single_row(i, opcode, &[]);
+                return;
+            }
+        }
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", i.rs1 as u64, false);
+        zib.src_b("reg", i.rs2 as u64, false);
+        zib.op(op).unwrap();
+        if neg {
+            zib.j(inst_size as i64, i.imm as i64);
+        } else {
+            zib.j(i.imm as i64, inst_size as i64);
+        }
+        zib.verbose(&format!("{} r{}, r{}, 0x{:x}", i.inst, i.rs1, i.rs2, i.imm));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn create_branch_op_zisk(
+    pub fn create_branch_op_typed(
         &mut self,
         i: &RiscvInstruction,
         op: ZiskOp,
@@ -1338,7 +898,7 @@ impl Riscv2ZiskContext<'_> {
     /// Creates a Zisk operation that simply sets the error to true and halts the execution
     pub fn halt_with_error(&mut self, i: &RiscvInstruction, inst_size: u64) {
         assert!(inst_size == 2 || inst_size == 4);
-        let mut zib = ZiskInstBuilder::new_for_riscv(i);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
         zib.src_a("imm", 0, false);
         zib.src_b("imm", 0, false);
         zib.op("halt").unwrap();
@@ -1355,21 +915,36 @@ impl Riscv2ZiskContext<'_> {
     /// Creates a Zisk operation that loads a value from memory using the specified operation
     /// and stores the result in a register
     pub fn load_op(&mut self, i: &RiscvInstruction, op: &str, w: u64, inst_size: u64) {
+        if inst_size == 4 {
+            if let Some(opcode) = Rv64imSingleRowOpcode::from_inst_name(i.inst.as_str()) {
+                self.lower_rv64im_single_row(i, opcode, &[]);
+                return;
+            }
+        }
         let reg_offset: i64 =
             if i.inst == "fld" || i.inst == "flw" || i.inst == "c.fld" || i.inst == "c.fldsp" {
                 ((FREG_F0 - REG_X0) >> 3) as i64
             } else {
                 0
             };
-        let op = ZiskOp::try_from_name(op).unwrap();
-        self.load_op_zisk_with_reg_offset(i, op, w, inst_size, reg_offset);
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", i.rs1 as u64, false);
+        zib.ind_width(w);
+        zib.src_b("ind", i.imm as u64, false);
+        zib.op(op).unwrap();
+        zib.store("reg", i.rd as i64 + reg_offset, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.verbose(&format!("{} r{}, 0x{:x}(r{})", i.inst, i.rd, i.imm, i.rs1));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn load_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, w: u64, inst_size: u64) {
-        self.load_op_zisk_with_reg_offset(i, op, w, inst_size, 0);
+    pub fn load_op_typed(&mut self, i: &RiscvInstruction, op: ZiskOp, w: u64, inst_size: u64) {
+        self.load_op_with_reg_offset(i, op, w, inst_size, 0);
     }
 
-    pub fn load_op_zisk_with_reg_offset(
+    pub fn load_op_with_reg_offset(
         &mut self,
         i: &RiscvInstruction,
         op: ZiskOp,
@@ -1397,21 +972,36 @@ impl Riscv2ZiskContext<'_> {
     /// Creates a Zisk operation that loads a value from register using the specified operation
     /// and stores the result in memory
     pub fn store_op(&mut self, i: &RiscvInstruction, op: &str, w: u64, inst_size: u64) {
+        if inst_size == 4 {
+            if let Some(opcode) = Rv64imSingleRowOpcode::from_inst_name(i.inst.as_str()) {
+                self.lower_rv64im_single_row(i, opcode, &[]);
+                return;
+            }
+        }
         let reg_offset: u64 =
             if i.inst == "fsd" || i.inst == "fsw" || i.inst == "c.fsd" || i.inst == "c.fsdsp" {
                 (FREG_F0 - REG_X0) >> 3
             } else {
                 0
             };
-        let op = ZiskOp::try_from_name(op).unwrap();
-        self.store_op_zisk_with_reg_offset(i, op, w, inst_size, reg_offset);
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", i.rs1 as u64, false);
+        zib.src_b("reg", i.rs2 as u64 + reg_offset, false);
+        zib.op(op).unwrap();
+        zib.ind_width(w);
+        zib.store("ind", i.imm as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.verbose(&format!("{} r{}, 0x{:x}(r{})", i.inst, i.rs2, i.imm, i.rs1));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn store_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, w: u64, inst_size: u64) {
-        self.store_op_zisk_with_reg_offset(i, op, w, inst_size, 0);
+    pub fn store_op_typed(&mut self, i: &RiscvInstruction, op: ZiskOp, w: u64, inst_size: u64) {
+        self.store_op_with_reg_offset(i, op, w, inst_size, 0);
     }
 
-    pub fn store_op_zisk_with_reg_offset(
+    pub fn store_op_with_reg_offset(
         &mut self,
         i: &RiscvInstruction,
         op: ZiskOp,
@@ -1439,11 +1029,25 @@ impl Riscv2ZiskContext<'_> {
     /// Creates a Zisk operation that loads a constant value using the specified operation and
     /// stores the result in a register
     pub fn immediate_op(&mut self, i: &RiscvInstruction, op: &str, inst_size: u64) {
-        let op = ZiskOp::try_from_name(op).unwrap();
-        self.immediate_op_zisk(i, op, inst_size);
+        if inst_size == 4 {
+            if let Some(opcode) = Rv64imSingleRowOpcode::from_inst_name(i.inst.as_str()) {
+                self.lower_rv64im_single_row(i, opcode, &[]);
+                return;
+            }
+        }
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", i.rs1 as u64, false);
+        zib.src_b("imm", i.imm as u64, false);
+        zib.op(op).unwrap();
+        zib.store("reg", i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        zib.verbose(&format!("{} r{}, r{}, 0x{:x}", i.inst, i.rd, i.rs1, i.imm));
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn immediate_op_zisk(&mut self, i: &RiscvInstruction, op: ZiskOp, inst_size: u64) {
+    pub fn immediate_op_typed(&mut self, i: &RiscvInstruction, op: ZiskOp, inst_size: u64) {
         assert!(inst_size == 2 || inst_size == 4);
         let mut zib = ZiskInstBuilder::new_for_riscv(i);
         zib.src_a_reg(i.rs1 as u64, false);
@@ -1464,11 +1068,33 @@ impl Riscv2ZiskContext<'_> {
     /// stores the result in a register, if rs1 is x0, operation is replaced by copyb, only could
     /// be use on operations that op(x0, imm) == imm (e.g. add, or, xor)
     pub fn immediate_op_or_x0_copyb(&mut self, i: &RiscvInstruction, op: &str, inst_size: u64) {
-        let op = ZiskOp::try_from_name(op).unwrap();
-        self.immediate_op_or_x0_copyb_zisk(i, op, inst_size);
+        if inst_size == 4 {
+            if let Some(opcode) = Rv64imSingleRowOpcode::from_inst_name(i.inst.as_str()) {
+                self.lower_rv64im_single_row(i, opcode, &[]);
+                return;
+            }
+        }
+        assert!(inst_size == 2 || inst_size == 4);
+        let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
+        zib.src_a("reg", i.rs1 as u64, false);
+        zib.src_b("imm", i.imm as u64, false);
+        if i.rs1 == 0 {
+            zib.op("copyb").unwrap();
+        } else {
+            zib.op(op).unwrap();
+        }
+        zib.store("reg", i.rd as i64, false, false);
+        zib.j(inst_size as i64, inst_size as i64);
+        if i.rs1 == 0 {
+            zib.verbose(&format!("{} r{}, r{}, 0x{:x} => copyb", i.inst, i.rd, i.rs1, i.imm));
+        } else {
+            zib.verbose(&format!("{} r{}, r{}, 0x{:x}", i.inst, i.rd, i.rs1, i.imm));
+        }
+        zib.build();
+        self.insert_inst(i.rom_address, zib);
     }
 
-    pub fn immediate_op_or_x0_copyb_zisk(
+    pub fn immediate_op_or_x0_copyb_typed(
         &mut self,
         i: &RiscvInstruction,
         op: ZiskOp,
@@ -1498,10 +1124,6 @@ impl Riscv2ZiskContext<'_> {
     }
 
     pub fn copyb(&mut self, i: &RiscvInstruction, inst_size: u64, rs: u64) {
-        self.copyb_zisk(i, inst_size, rs);
-    }
-
-    pub fn copyb_zisk(&mut self, i: &RiscvInstruction, inst_size: u64, rs: u64) {
         assert!(inst_size == 2 || inst_size == 4);
         assert!(rs == 1 || rs == 2);
         let mut zib = ZiskInstBuilder::new_for_riscv(i);
