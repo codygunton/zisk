@@ -61,7 +61,8 @@ impl ZiskInstExtract {
     }
 }
 
-pub fn make_riscv_instruction(
+#[cfg(test)]
+fn make_riscv_instruction(
     rom_address: u64,
     rd: u32,
     rs1: u32,
@@ -104,26 +105,6 @@ macro_rules! with_context {
         $body
         ZiskInstExtract::from_inst(&$ctx.extract_inst.unwrap().i)
     }};
-}
-
-pub fn extract_lui(rom_address: u64, rd: u32, imm: i32) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, rd, 0, 0, imm);
-    extract_lui_from_inst(&i)
-}
-
-pub fn extract_auipc(rom_address: u64, rd: u32, imm: i32) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, rd, 0, 0, imm);
-    extract_auipc_from_inst(&i)
-}
-
-pub fn extract_jal(rom_address: u64, rd: u32, imm: i32) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, rd, 0, 0, imm);
-    extract_jal_from_inst(&i)
-}
-
-pub fn extract_jalr(rom_address: u64, rd: u32, rs1: u32, imm: i32) -> ZiskInstExtract {
-    let i = make_riscv_instruction(rom_address, rd, rs1, 0, imm);
-    extract_jalr_from_inst(&i)
 }
 
 pub fn extract_lui_from_inst(i: &RiscvInstruction) -> ZiskInstExtract {
