@@ -15,6 +15,9 @@ use zisk_definitions::{
     SYSCALL_SHA256F_ID,
 };
 
+use crate::rv64im_transpiler::{
+    decode_and_lower_matching_riscv_instruction, lower_riscv_instruction, static_row_to_zisk_inst,
+};
 use crate::{
     convert_vector, ZiskInstBuilder, ZiskRom, ARCH_ID_CSR_ADDR, ARCH_ID_ZISK, CSR_ADDR,
     EXTRA_PARAMS_ADDR, FLOAT_LIB_ROM_ADDR, FLOAT_LIB_SP, FREG_F0, FREG_INST, FREG_RA, FREG_X0,
@@ -96,6 +99,28 @@ impl Riscv2ZiskContext<'_> {
         riscv_instruction: &RiscvInstruction,
         next_instructions: &[RiscvInstruction],
     ) {
+        if self.input_precompile.is_none()
+            && self.output_precompile.is_none()
+            && self.input_precompile_reg.is_none()
+            && self.output_precompile_reg.is_none()
+        {
+            let rows =
+                if riscv_instruction.rvinst != 0 && (riscv_instruction.rvinst & 0x3) == 0x3 {
+                    decode_and_lower_matching_riscv_instruction(riscv_instruction)
+                } else {
+                    None
+                }
+                .or_else(|| lower_riscv_instruction(riscv_instruction));
+
+            if let Some(rows) = rows {
+                for row in rows.as_slice() {
+                    self.insts
+                        .insert(row.paddr, ZiskInstBuilder { i: static_row_to_zisk_inst(*row) });
+                }
+                return;
+            }
+        }
+
         // ZisK supports the IMAC RISC-V instruction set
         match riscv_instruction.inst.as_str() {
             // I: Base Integer Instruction Set
