@@ -369,6 +369,10 @@ pub fn extract_transpile_rv64im_accepted_raw(raw: u32) -> bool {
     lowering_opcode(decoded.opcode).is_some()
 }
 
+pub fn extract_transpile_rv64im_materializes_raw(raw: u32) -> bool {
+    extract_transpile_rv64im_raw(raw).accepted
+}
+
 macro_rules! register_extract {
     ($name:ident, $opcode:expr) => {
         pub fn $name(i: &RiscvInstruction) -> ZiskInstExtract {
@@ -536,6 +540,7 @@ mod tests {
         let add_transpile = extract_transpile_rv64im_raw(0x00b50533);
         assert!(add_transpile.accepted);
         assert!(extract_transpile_rv64im_accepted_raw(0x00b50533));
+        assert!(extract_transpile_rv64im_materializes_raw(0x00b50533));
         assert_eq!(add_transpile.row.b_src, crate::SRC_REG);
         assert_eq!(add_transpile.row.b_offset_imm0, 11);
 
@@ -545,6 +550,7 @@ mod tests {
         assert!(!extract_rv64im_opcode_supported(0x1000000F));
         assert!(!extract_transpile_rv64im_raw(0x1000000F).accepted);
         assert!(!extract_transpile_rv64im_accepted_raw(0x1000000F));
+        assert!(!extract_transpile_rv64im_materializes_raw(0x1000000F));
     }
 
     #[test]
