@@ -370,7 +370,7 @@ pub fn extract_transpile_rv64im_accepted_raw(raw: u32) -> bool {
 }
 
 pub fn extract_transpile_rv64im_materializes_raw(raw: u32) -> bool {
-    extract_transpile_rv64im_raw(raw).accepted
+    extract_transpile_rv64im_accepted_raw(raw)
 }
 
 macro_rules! register_extract {
