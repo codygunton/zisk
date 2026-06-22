@@ -217,6 +217,35 @@ airtemplate Arith(const int N = 2**18) {
     np * (1 - np) === 0;
     sext * (1 - sext) === 0;
 
+    // ------------------------------------------------------------------
+    // Pin the product sign for signed 64-bit multiplication.
+    //
+    // Without this, `np` (the product's sign bit) is only ever cross-checked
+    // against the sign of `d` -- and `d` is a free witness column. The eq[]
+    // chunk equations above then only constrain the *magnitude* of the
+    // result: |a * b| = |result|. For e.g. MUL(-1, 1) two assignments
+    // satisfy every other constraint in this AIR:
+    //   (c, d, np) = (0xFFFF.., 0xFFFF.., 1)  ->  product -1   (honest)
+    //   (c, d, np) = (1,        0,        0)  ->  product +1   (malicious)
+    // because |-1| = |+1| = 1. The prover may therefore choose the sign of
+    // the result, and Main reads `c` as the MUL output -- so MUL(-1,1) can
+    // be proven to equal 1.
+    //
+    // Forcing np to follow the operand signs (np = na XOR nb) removes the
+    // malicious solution. Selector signed*(1-div) = {mul, mulh, mulsuh}.
+    //
+    // Zero-product case: when the true product is zero (a == 0 or b == 0),
+    // every c[i] and d[i] is zero too. Since the limbs are non-negative
+    // 16-bit values, the limb sum is zero iff every limb is zero iff the
+    // product is zero. So multiplying the np constraint by that sum makes
+    // it vanish exactly on zero products -- np is then unconstrained by this
+    // line, but the existing arith_table lookup already pins np = sign(d3),
+    // and d == 0 forces sign(d3) = 0, so np is still correctly fixed at 0.
+    // For nonzero products the limb sum is nonzero and forces np = na XOR nb.
+    // ------------------------------------------------------------------
+    signed * (1 - div) * (np - (na + nb - 2 * na * nb))
+                       * (c[0] + c[1] + c[2] + c[3] + d[0] + d[1] + d[2] + d[3]) === 0;
+
     col witness bits(8) op;
 
     // div m32 sa  sb  primary  secondary  opcodes              na   nb   np   nr   sext(c)

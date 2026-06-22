@@ -1,6 +1,10 @@
 # Ignore build artifacts (these are rebuilt in container)
 target/
+target-docker/
 build/
+emulator-asm/build/
+tools/zisk-pil-extract/target/
+riscof/riscof_work/
 
 # Ignore logs and temporary files  
 logs/
