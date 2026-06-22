@@ -24,3 +24,5 @@ Verification results:
 - `./build-elf elf-regressions/divw_intmin_safe/test.s` succeeded.
 - `./prove-elf elf-regressions/divw_intmin_overflow/test.elf` failed as expected at `VerifyGlobalConstraints`.
 - `./prove-elf elf-regressions/divw_intmin_safe/test.elf` succeeded and verified the final proof.
+
+Alpha rebase note: branch was rebased onto `cg/repro-base-v1.0.0-alpha` for ZisK team review, and `prove-elf` now accepts both the old `--verify-proofs`/`--emulator` CLI and the 1.0-alpha `--verify-proof` default-emulator CLI.
