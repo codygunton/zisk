@@ -10,7 +10,7 @@ extern "C" {
 #define uint64_t unsigned long long
 
 // System address where the floating-point registers are mapped
-#define SYS_ADDR 0xa0000000
+#define SYS_ADDR 0x00200000
 #define REG_FIRST SYS_ADDR
 #define FREG_FIRST (SYS_ADDR + 0x1000)
 #define FREG_F0 FREG_FIRST
@@ -59,7 +59,7 @@ MSB                                                         LSB
   Value = (-1)^sign × 1.fraction × 2^(exponent - 127)     ~7 decimal digits
 */
   
-#define F32_SIGN_BIT_MASK  0xFFFFFFFF80000000
+#define F32_SIGN_BIT_MASK  0x80000000
 #define F32_EXPONENT_MASK  0x7F800000
 #define F32_MANTISSA_MASK  0x007FFFFF
 #define F32_QUIET_NAN_MASK 0x00400000
