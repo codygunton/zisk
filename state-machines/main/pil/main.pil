@@ -364,6 +364,10 @@ airtemplate Main(int N = 2**21, int RC = 2, int stack_enabled = 0,
     // The flag m32 is used to avoid send "garbage" values to bus, to simplify the other state
     // state machines and to increase the hits to FROPS (frequent operations).
 
+    // BUG(divw-intmin-overflow): for DIVW(INT_MIN_32, -1), current op_div_w commits
+    // c = [0x80000000, 0x00000000], but Arith/PIL proves the sign-extended
+    // result c = [0x80000000, 0xFFFFFFFF]. Since c is in the operation-bus
+    // tuple, the lookup cannot balance. Reproducer: elf-regressions/divw_intmin_overflow/.
     assumes_operation(op: , 
                       a: [a[0], (1 - m32) * a[1]], 
                       b: [b[0], (1 - m32) * b[1]], 
