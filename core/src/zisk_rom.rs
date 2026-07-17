@@ -57,6 +57,19 @@ use std::error::Error;
 // #[cfg(feature = "sp")]
 // use crate::SRC_SP;
 
+const CAUSE_INSTRUCTION_ACCESS_FAULT: u64 = 1;
+
+fn instruction_access_fault_instruction(paddr: u64) -> ZiskInst {
+    let mut zib = ZiskInstBuilder::new(paddr);
+    zib.src_a("imm", 0, false);
+    zib.src_b("imm", CAUSE_INSTRUCTION_ACCESS_FAULT, false);
+    zib.op("halt").unwrap();
+    zib.j(0, 0);
+    zib.end();
+    zib.verbose("instruction access fault");
+    zib.i
+}
+
 /// Data section with 64-bit data, used for RW sections that contain initial data
 /// It is an evolution of DataSection
 #[derive(Debug, Clone)]
@@ -264,16 +277,26 @@ impl ZiskRom {
         };
 
         // Initialize in parallel to increase performance
-        self.rom_bios_instructions =
-            (0..num_bios_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
-        self.rom_program_instructions =
-            (0..num_program_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
-        self.rom_program_na_instructions =
-            (0..num_program_na_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
-        self.rom_float_instructions =
-            (0..num_float_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
-        self.rom_float_na_instructions =
-            (0..num_float_na_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
+        self.rom_bios_instructions = (0..num_bios_instructions)
+            .into_par_iter()
+            .map(|index| instruction_access_fault_instruction(ROM_ENTRY + index * 4))
+            .collect();
+        self.rom_program_instructions = (0..num_program_instructions)
+            .into_par_iter()
+            .map(|index| instruction_access_fault_instruction(ROM_ADDR + index * 4))
+            .collect();
+        self.rom_program_na_instructions = (0..num_program_na_instructions)
+            .into_par_iter()
+            .map(|index| instruction_access_fault_instruction(ROM_ADDR + index))
+            .collect();
+        self.rom_float_instructions = (0..num_float_instructions)
+            .into_par_iter()
+            .map(|index| instruction_access_fault_instruction(FLOAT_LIB_ROM_ADDR + index * 4))
+            .collect();
+        self.rom_float_na_instructions = (0..num_float_na_instructions)
+            .into_par_iter()
+            .map(|index| instruction_access_fault_instruction(FLOAT_LIB_ROM_ADDR + index))
+            .collect();
 
         // Sort pc list
         self.sorted_pc_list.sort();
@@ -635,6 +658,22 @@ mod tests {
         assert_eq!(rom.rom_program_instructions[3].op, 12); // (ROM_ADDR + 12 - ROM_ADDR) / 4 = 3
 
         assert_eq!(rom.max_program_pc, ROM_ADDR + 12);
+    }
+
+    #[test]
+    fn test_optimize_main_rom_gap_is_instruction_access_fault() {
+        let mut rom = ZiskRom { next_init_inst_addr: ROM_ENTRY, ..Default::default() };
+
+        rom.insts.insert(ROM_ADDR, create_test_inst_builder(ROM_ADDR, 10));
+        rom.insts.insert(ROM_ADDR + 8, create_test_inst_builder(ROM_ADDR + 8, 12));
+
+        assert!(rom.optimize_instruction_lookup().is_ok());
+
+        let gap = &rom.rom_program_instructions[1];
+        assert_eq!(gap.paddr, ROM_ADDR + 4);
+        assert_eq!(gap.op_str, "halt");
+        assert_eq!(gap.b_offset_imm0, CAUSE_INSTRUCTION_ACCESS_FAULT);
+        assert!(gap.end);
     }
 
     #[test]

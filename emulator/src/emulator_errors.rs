@@ -5,6 +5,7 @@ pub enum ZiskEmulatorErr {
     WrongArguments(ErrWrongArguments),
     AddressOutOfRange(u64),
     EmulationNoCompleted,
+    Exception(u32),
     Unknown(String),
 }
 
@@ -31,6 +32,9 @@ impl fmt::Display for ZiskEmulatorErr {
                 write!(f, "Address out of range: {addr:#x}")
             }
             ZiskEmulatorErr::EmulationNoCompleted => write!(f, "Emulation not completed"),
+            ZiskEmulatorErr::Exception(cause) => {
+                write!(f, "Emulation stopped with RISC-V exception cause {cause}")
+            }
             ZiskEmulatorErr::Unknown(code) => write!(f, "Error code {code}"),
         }
     }
@@ -42,6 +46,7 @@ impl Error for ZiskEmulatorErr {
             ZiskEmulatorErr::WrongArguments(e) => Some(e),
             ZiskEmulatorErr::AddressOutOfRange(_) => None,
             ZiskEmulatorErr::EmulationNoCompleted => None,
+            ZiskEmulatorErr::Exception(_) => None,
             ZiskEmulatorErr::Unknown(_) => None,
         }
     }
