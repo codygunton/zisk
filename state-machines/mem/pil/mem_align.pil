@@ -211,6 +211,16 @@ airtemplate MemAlign(const int N = 2**10, const int RC = 2, const int CHUNK_NUM 
     col witness bits(32) value[RC];
     for (int i = 0; i < RC; i++) {
         value[i] === sel_prove * prove_val[i] + sel_assume * assume_val[i];
-    } 
+    }
+
+    // Diagnostic repro guard (soundness demo). For a narrow access (width < 8) the
+    // zero-extended value fits in the low 32 bits, so value[1] must be 0 -- but the
+    // stock circuit reconstructs value[1] from reg[] lanes outside the access window
+    // (byte-range-checked only), leaving it forgeable (reg[4]=1 => value[1]=1).
+    // Honest narrow reads already satisfy this and width-8 accesses vanish the
+    // factor, so the guard is inert on honest traces. Diagnostic only, not a
+    // proposed final fix. See elf-regressions/mem_align_bad_lwu/README.md.
+    sel_prove * (width - 8) * value[RC - 1] === 0;
+
     permutation(MEMORY_ID, expressions: [wr * (MEMORY_STORE_OP - MEMORY_LOAD_OP) + MEMORY_LOAD_OP, addr * CHUNK_NUM + offset, step, width, ...value], sel: sel_prove - sel_assume, sel_is_ternary: 1);
 }

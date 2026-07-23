@@ -160,6 +160,17 @@ pub const ARCH_ID_CSR: u64 = 0xF12;
 /// Architecture ID Control and Status Register address
 pub const ARCH_ID_CSR_ADDR: u64 = CSR_ADDR + (ARCH_ID_CSR * 8);
 
+// MemAlign narrow-load malicious-witness repro (soundness demo). Shared by the
+// two env-gated injection sites (here + mem_align_sm.rs); fires only when
+// ZISK_REPRO_BAD_MEM_ALIGN_LWU is set and the access is the target `lwu`. `lbu`
+// is unaffected (byte reads use the separate, safe MemAlignByte component); the
+// gap is in the general MemAlign, reached by lwu/lhu. See
+// elf-regressions/mem_align_bad_lwu/README.md.
+pub const REPRO_BAD_MEM_ALIGN_LWU_ENV: &str = "ZISK_REPRO_BAD_MEM_ALIGN_LWU";
+pub const REPRO_MEM_ALIGN_LWU_ADDR: u64 = 0xa003_0000; // 8-aligned RAM; must match the ELF
+pub const REPRO_MEM_ALIGN_LWU_WIDTH: u64 = 4; // general MemAlign; width 1 => safe MemAlignByte
+pub const REPRO_MEM_ALIGN_LWU_FORGED_HI: u64 = 1u64 << 32;
+
 /// Memory section data, including a buffer (a vector of bytes) and start and end program
 /// memory addresses.
 pub struct MemSection {
@@ -824,12 +835,23 @@ impl Mem {
         debug_assert!(width < 8);
         let offset = address & M3;
         let raw_data = raw_data >> (8 * offset);
-        match width {
+        let value = match width {
             1 => raw_data & M8,
             2 => raw_data & M16,
             4 => raw_data & M32,
             _ => panic!("Mem::get_single_not_aligned_data() invalid width={width}"),
+        };
+        // THE LIE (Main / load side): return the honest word with a forged
+        // non-zero high word, so rd = copyb(loaded) is a value never present in
+        // memory. Matched on the MemAlign side by mem_align_sm.rs so the MEMORY_ID
+        // permutation still balances. Honest runs (env var unset) are untouched.
+        if width == REPRO_MEM_ALIGN_LWU_WIDTH
+            && address == REPRO_MEM_ALIGN_LWU_ADDR
+            && std::env::var_os(REPRO_BAD_MEM_ALIGN_LWU_ENV).is_some()
+        {
+            return value | REPRO_MEM_ALIGN_LWU_FORGED_HI;
         }
+        value
     }
 
     /// Get double not aligned data from the raw data
