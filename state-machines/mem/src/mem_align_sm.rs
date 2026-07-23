@@ -21,6 +21,14 @@ const OFFSET_MASK: u32 = 0x07;
 const OFFSET_BITS: u32 = 3;
 const CHUNK_BITS_MASK: u64 = (1 << CHUNK_BITS) - 1;
 
+// MemAlign narrow-load repro (soundness demo): the MemAlign-witness half of the
+// two env-gated injections; mirrors the constants in zisk_core::mem.
+// See elf-regressions/mem_align_bad_lwu/README.md.
+const REPRO_BAD_MEM_ALIGN_LWU_ENV: &str = "ZISK_REPRO_BAD_MEM_ALIGN_LWU";
+const REPRO_MEM_ALIGN_LWU_ADDR: u32 = 0xa003_0000;
+const REPRO_MEM_ALIGN_LWU_WIDTH: u8 = 4;
+const REPRO_MEM_ALIGN_LWU_FORGED_HI: u64 = 1u64 << 32;
+
 const fn generate_allowed_offsets() -> [u8; CHUNK_NUM] {
     let mut offsets = [0; CHUNK_NUM];
     let mut i = 0;
@@ -115,7 +123,10 @@ impl<F: PrimeField64> MemAlignSM<F> {
                 */
                 // Unaligned memory op information thrown into the bus
                 let step = input.step;
-                let value = input.value;
+                // THE LIE (MemAlign witness side): forge value[1]=1 (reg[4]=1, a
+                // valid byte outside the access window) to match the forged
+                // Main-side value; MEMORY_ID still balances. Honest: untouched.
+                let value = Self::maybe_inject_bad_mem_align_lwu(input);
 
                 // Get the aligned address
                 let addr_read = addr >> OFFSET_BITS;
@@ -833,6 +844,20 @@ impl<F: PrimeField64> MemAlignSM<F> {
     fn get_byte(value: u64, index: usize, offset: usize) -> u8 {
         let chunk = (offset + index) % CHUNK_NUM;
         ((value >> (chunk * CHUNK_BITS)) & CHUNK_BITS_MASK) as u8
+    }
+
+    /// Repro (soundness demo): forge the loaded value's high word for the target
+    /// `lwu`. Every other lane and the ROM/range obligations stay honestly
+    /// satisfied, which is what makes the forged row an accepted witness.
+    fn maybe_inject_bad_mem_align_lwu(input: &MemAlignInput) -> u64 {
+        if !input.is_write
+            && input.width == REPRO_MEM_ALIGN_LWU_WIDTH
+            && input.addr == REPRO_MEM_ALIGN_LWU_ADDR
+            && std::env::var_os(REPRO_BAD_MEM_ALIGN_LWU_ENV).is_some()
+        {
+            return input.value | REPRO_MEM_ALIGN_LWU_FORGED_HI;
+        }
+        input.value
     }
 
     pub fn compute_witness<R: MemAlignTraceRowOps<F>>(
