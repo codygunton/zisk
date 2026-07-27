@@ -22,6 +22,11 @@ use zisk_pil::{ArithTrace, ArithTraceRowOps};
 const CHUNK_SIZE: u64 = 0x10000;
 const EXTENSION: u64 = 0xFFFFFFFF;
 
+// Arith signed-DIV quotient-sign malicious-witness repro (env-gated). Target DIV(1, -1).
+const REPRO_BAD_ARITH_DIV_SIGN_ENV: &str = "ZISK_REPRO_BAD_ARITH_DIV_SIGN";
+const REPRO_DIV_SIGN_A: u64 = 1;
+const REPRO_DIV_SIGN_B: u64 = 0xFFFF_FFFF_FFFF_FFFF;
+
 /// The `ArithFullSM` struct represents the Arithmetic Full State Machine.
 ///
 /// This state machine coordinates the computation of arithmetic operations and updates
@@ -180,6 +185,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         let b = OperationBusData::get_b(&input_data);
 
         aop.calculate(opcode, a, b);
+        Self::maybe_inject_bad_div_sign_repro(&mut aop, opcode, a, b);
 
         // If the operation is a division, then use the binary component
         // to check that the remainer is lower than the divisor
@@ -229,6 +235,7 @@ impl<F: PrimeField64> ArithFullSM<F> {
         let b = OperationBusData::get_b(&input_data);
 
         aop.calculate(opcode, a, b);
+        Self::maybe_inject_bad_div_sign_repro(aop, opcode, a, b);
         let mut row = R::default();
         for i in [0, 2] {
             range_table_inputs.use_chunk_range_check(0, aop.a[i] as u64);
@@ -300,5 +307,47 @@ impl<F: PrimeField64> ArithFullSM<F> {
         );
 
         row
+    }
+
+    /// Repro (env-gated): forge the Arith witness row for `DIV(1, -1)` so the quotient
+    /// sign is positive (claimed quotient +1; the honest quotient is -1). The Main-side
+    /// result forgery is in `core/src/ops_core.rs::op_div`. Honest runs (env unset) are
+    /// untouched. See elf-regressions/arith_bad_div_sign/README.md.
+    fn maybe_inject_bad_div_sign_repro(aop: &mut ArithOperation, opcode: u8, a: u64, b: u64) {
+        if opcode != ZiskOp::Div.code()
+            || a != REPRO_DIV_SIGN_A
+            || b != REPRO_DIV_SIGN_B
+            || std::env::var_os(REPRO_BAD_ARITH_DIV_SIGN_ENV).is_none()
+        {
+            return;
+        }
+
+        tracing::warn!("injecting bad Arith DIV sign repro row: DIV(1, -1) quotient forged +1 (honest -1)");
+
+        // THE LIE is the quotient sign. Dividend=1, divisor=-1, remainder=0 stay honest;
+        // only the quotient value a[] and its sign na change (and the carries / range_ab
+        // that depend on them). The row still satisfies the Arith AIR: carries
+        // [-1,-1,-1,-1,0,0,0] balance the eq identity, the flag tuple (na=0,nb=1,np=0,nr=0)
+        // is a legal arith_table row (realized honestly at quotient 0, e.g. DIV(1,-2)=0),
+        // and the remainder bound |0| < |-1| holds. So the stock circuit accepts rd=+1.
+        aop.a = [1, 0, 0, 0]; // quotient = +1   (honest: -1 = [0xFFFF; 4])
+        aop.b = [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF]; // divisor = -1
+        aop.c = [1, 0, 0, 0]; // dividend = 1
+        aop.d = [0, 0, 0, 0]; // remainder = 0
+        aop.carry = [-1, -1, -1, -1, 0, 0, 0];
+        aop.m32 = false;
+        aop.div = true;
+        aop.na = false; // THE LIE: quotient sign positive (honest: true)
+        aop.nb = true; // divisor negative
+        aop.np = false; // dividend positive
+        aop.nr = false; // remainder non-negative
+        aop.sext = false;
+        aop.main_mul = false;
+        aop.main_div = true;
+        aop.signed = true;
+        aop.range_ab = 5; // na=0 (a3 '+'), nb=1 (b3 '-')  -> rid 5
+        aop.range_cd = 4; // np=0 (c3 '+'), nr=0 (d3 '+')  -> rid 4
+        aop.div_by_zero = false;
+        aop.div_overflow_mul_rz = false;
     }
 }
