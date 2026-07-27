@@ -65,14 +65,16 @@ ZISK_REPRO_BAD_ARITH_DIV_SIGN=1 cargo-zisk prove --elf /tmp/div.elf --emulator -
 cargo-zisk verify-constraints --elf /tmp/div.elf --emulator -k ~/.zisk/provingKey
 ```
 
-## Expected result (stock v1.0.0-alpha proving key)
+## Verified (stock v1.0.0-alpha proving key)
 
-End-to-end GPU validation in progress; this section will be marked *verified* once confirmed.
+End-to-end GPU run against the stock v1.0.0-alpha proving key:
 
-- `verify-constraints` + env var: PASSES -- Arith AIR + all global constraints accept `rd = +1`.
-- `prove --verify-proofs --gpu` + env var: the recursive **Vadcop Final proof verifies**.
-- honest (no env var): PASSES.
-- patched key (guard added): malicious REJECTED, honest PASSES.
+- `prove --verify-proofs --gpu` + env var: the recursive **Vadcop Final proof verifies** -- the stock
+  circuit accepts `DIV(1, -1) = +1`, a result that is the negation of the true quotient.
+- Patched key (guard added), `verify-constraints` + env var: **REJECTED** -- only the guard fires
+  (`arith.pil` constraint `na = np ^ nb`; every other AIR and all global constraints still pass).
+- Patched key, honest (no env var): **PASSED** -- the real `DIV(1, -1) = -1` trace still satisfies
+  every constraint.
 
 ## Diagnostic guard
 
