@@ -223,6 +223,20 @@ airtemplate Arith(const int N = 2**18) {
     }
     rz * sum_cd === 0;
 
+    // Repro guard for the signed-DIV quotient-sign malicious witness.
+    //
+    // The MUL product sign was pinned by the `rz` rework (np is forced to na^nb unless
+    // the product is zero). The division path has the mirror-image gap: nothing forces
+    // the QUOTIENT sign `na` to equal `np ^ nb`, so a prover can claim DIV(1,-1) = +1
+    // (na=0) instead of -1 (na=1) -- the flag row (na=0,nb=1,np=0,nr=0) is legal because
+    // it is honestly realized when the quotient truncates to 0 (e.g. DIV(1,-2)=0), and
+    // the eq identity still balances. This is the div analogue of the MUL np-sign fix:
+    // for a nonzero quotient (a-limb sum != 0), pin na = np ^ nb. The (1 - div_overflow_mul_rz)
+    // factor exempts the MIN/-1 overflow special case (where the quotient is MIN, na=1,
+    // but np^nb=0). Honest-inert; unsigned div has na=np=nb=0 so it is vacuous.
+    div * (1 - div_overflow_mul_rz) * (a[0] + a[1] + a[2] + a[3])
+        * (na - (np + nb - 2 * np * nb)) === 0;
+
     col witness bits(8) op;
 
     // div m32 sa  sb  primary  secondary  opcodes              na   nb   np   nr   sext(c)

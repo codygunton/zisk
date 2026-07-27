@@ -2,6 +2,13 @@ use std::num::Wrapping;
 
 const M64: u64 = 0xFFFFFFFFFFFFFFFF;
 
+// Arith signed-DIV quotient-sign malicious-witness repro (env-gated). Target: DIV(1, -1),
+// honest quotient -1, forged quotient +1. See elf-regressions/arith_bad_div_sign/README.md.
+const REPRO_BAD_ARITH_DIV_SIGN_ENV: &str = "ZISK_REPRO_BAD_ARITH_DIV_SIGN";
+const REPRO_DIV_SIGN_A: u64 = 1;
+const REPRO_DIV_SIGN_B: u64 = 0xFFFF_FFFF_FFFF_FFFF;
+const REPRO_DIV_SIGN_FORGED_Q: u64 = 1;
+
 /* Internal instructions */
 
 /// Sets flag to true (and c to 0)
@@ -304,7 +311,18 @@ pub const fn op_divu(a: u64, b: u64) -> (u64, bool) {
 /// If a=0x8000000000000000 (MIN_I64) and b=0xFFFFFFFFFFFFFFFF (-1) the result should be -MIN_I64,
 /// which cannot be represented with 64 bits (overflow); it returns c=a and sets flag to false.
 #[inline(always)]
-pub const fn op_div(a: u64, b: u64) -> (u64, bool) {
+pub fn op_div(a: u64, b: u64) -> (u64, bool) {
+    // Repro (env-gated): forge the sign of a signed-division quotient. DIV(1, -1)
+    // honestly returns -1; here we return +1. The matching Arith witness forgery is
+    // in `arith_full.rs`. Honest runs (env unset) are untouched. See
+    // elf-regressions/arith_bad_div_sign/README.md.
+    if a == REPRO_DIV_SIGN_A
+        && b == REPRO_DIV_SIGN_B
+        && std::env::var_os(REPRO_BAD_ARITH_DIV_SIGN_ENV).is_some()
+    {
+        return (REPRO_DIV_SIGN_FORGED_Q, false);
+    }
+
     // Handle divide by zero case
     if b == 0 {
         return (M64, true);
