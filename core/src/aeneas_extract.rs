@@ -628,6 +628,16 @@ mod tests {
     }
 
     #[test]
+    fn supported_sd_rows_preserve_opcode_63() {
+        // sd x2, 0(x1)
+        let sd = extract_transpile_rv64im_rows_raw(0x0020b023);
+        assert!(sd.accepted);
+        assert_eq!(sd.decode.opcode_id, 63);
+        assert_eq!(sd.row_count, 1);
+        assert_eq!(sd.first_row, sd.last_row);
+    }
+
+    #[test]
     fn extraction_starts_match_production_convert_for_single_row_opcodes() {
         let cases: &[(&str, ExtractStart)] = &[
             ("lui", extract_lui_from_inst),
