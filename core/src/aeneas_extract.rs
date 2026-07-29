@@ -60,6 +60,15 @@ pub struct Rv64imTranspileExtract {
     pub row: ZiskInstExtract,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rv64imTranspileRowsExtract {
+    pub accepted: bool,
+    pub decode: Rv64imDecodeExtract,
+    pub row_count: u32,
+    pub first_row: ZiskInstExtract,
+    pub last_row: ZiskInstExtract,
+}
+
 fn opcode_id(opcode: RiscvOpcode) -> u32 {
     match opcode {
         RiscvOpcode::Lui => 1,
@@ -294,6 +303,7 @@ macro_rules! with_context {
     ($i:ident, $ctx:ident, $body:block) => {{
         let mut $ctx = Riscv2ZiskContext {
             extract_inst: None,
+            extract_first_inst: None,
             extract_marker: PhantomData,
             input_precompile: None,
             output_precompile: None,
@@ -361,6 +371,38 @@ pub fn extract_transpile_rv64im_raw(raw: u32) -> Rv64imTranspileExtract {
             Rv64imTranspileExtract { accepted: true, decode, row }
         }
         None => Rv64imTranspileExtract { accepted: false, decode, row: ZiskInstExtract::default() },
+    }
+}
+
+pub fn extract_transpile_rv64im_rows_raw(raw: u32) -> Rv64imTranspileRowsExtract {
+    let decoded = decode_32_core(raw);
+    let decode = decode_extract_from_decoded(decoded);
+    match lowering_opcode(decoded.opcode) {
+        Some(opcode) => {
+            let input =
+                Rv64imLoweringInput::new(0, decoded.rd, decoded.rs1, decoded.rs2, decoded.imm);
+            let mut ctx = Riscv2ZiskContext {
+                extract_inst: None,
+                extract_first_inst: None,
+                extract_marker: PhantomData,
+                input_precompile: None,
+                output_precompile: None,
+                input_precompile_reg: None,
+                output_precompile_reg: None,
+            };
+            ctx.lower_rv64im_single_row_input(&input, opcode, false);
+            let first_row = ZiskInstExtract::from_inst(&ctx.extract_first_inst.unwrap().i);
+            let last_row = ZiskInstExtract::from_inst(&ctx.extract_inst.unwrap().i);
+            let row_count = if first_row.paddr == last_row.paddr { 1 } else { 2 };
+            Rv64imTranspileRowsExtract { accepted: true, decode, row_count, first_row, last_row }
+        }
+        None => Rv64imTranspileRowsExtract {
+            accepted: false,
+            decode,
+            row_count: 0,
+            first_row: ZiskInstExtract::default(),
+            last_row: ZiskInstExtract::default(),
+        },
     }
 }
 
@@ -511,6 +553,7 @@ mod tests {
     fn convert_single_row(i: &RiscvInstruction) -> ZiskInstExtract {
         let mut ctx = Riscv2ZiskContext {
             extract_inst: None,
+            extract_first_inst: None,
             extract_marker: PhantomData,
             input_precompile: None,
             output_precompile: None,
@@ -551,6 +594,25 @@ mod tests {
         assert!(!extract_transpile_rv64im_raw(0x1000000F).accepted);
         assert!(!extract_transpile_rv64im_accepted_raw(0x1000000F));
         assert!(!extract_transpile_rv64im_materializes_raw(0x1000000F));
+    }
+
+    #[test]
+    fn raw_jalr_extraction_exposes_one_or_two_production_rows() {
+        // jalr x2, 4(x1): aligned immediate, one terminal AND row.
+        let aligned = extract_transpile_rv64im_rows_raw(0x00408167);
+        assert!(aligned.accepted);
+        assert_eq!(aligned.row_count, 1);
+        assert_eq!(aligned.first_row, aligned.last_row);
+        assert_eq!(aligned.last_row.op, crate::zisk_ops::ZiskOp::And.code());
+
+        // jalr x2, 2(x1): unaligned immediate, intermediate ADD then terminal AND.
+        let unaligned = extract_transpile_rv64im_rows_raw(0x00208167);
+        assert!(unaligned.accepted);
+        assert_eq!(unaligned.row_count, 2);
+        assert_eq!(unaligned.first_row.paddr, 0);
+        assert_eq!(unaligned.last_row.paddr, 1);
+        assert_eq!(unaligned.first_row.op, crate::zisk_ops::ZiskOp::Add.code());
+        assert_eq!(unaligned.last_row.op, crate::zisk_ops::ZiskOp::And.code());
     }
 
     #[test]

@@ -86,6 +86,8 @@ pub struct Riscv2ZiskContext<'a> {
     #[cfg(feature = "aeneas_extract")]
     pub extract_inst: Option<ZiskInstBuilder>,
     #[cfg(feature = "aeneas_extract")]
+    pub extract_first_inst: Option<ZiskInstBuilder>,
+    #[cfg(feature = "aeneas_extract")]
     pub extract_marker: PhantomData<&'a ()>,
     // to store csr-port used on CSR instrucction for next instruction
     pub input_precompile: Option<u32>,
@@ -104,6 +106,9 @@ impl Riscv2ZiskContext<'_> {
 
     #[cfg(feature = "aeneas_extract")]
     fn insert_inst(&mut self, _rom_address: u64, zib: ZiskInstBuilder) {
+        if self.extract_first_inst.is_none() {
+            self.extract_first_inst = Some(zib.clone());
+        }
         self.extract_inst = Some(zib);
     }
 
@@ -2457,6 +2462,8 @@ pub fn add_zisk_code(rom: &mut ZiskRom, addr: u64, data: &[u8], _dma_addrs: (u64
         insts: &mut rom.insts,
         #[cfg(feature = "aeneas_extract")]
         extract_inst: None,
+        #[cfg(feature = "aeneas_extract")]
+        extract_first_inst: None,
         #[cfg(feature = "aeneas_extract")]
         extract_marker: PhantomData,
         input_precompile: None,
