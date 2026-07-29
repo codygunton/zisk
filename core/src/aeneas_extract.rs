@@ -385,7 +385,7 @@ pub fn extract_transpile_rv64im_rows_raw(raw: u32) -> Rv64imTranspileRowsExtract
             last_row: ZiskInstExtract::default(),
         };
     }
-    if terminal.decode.opcode_id == opcode_id(RiscvOpcode::Jalr) && terminal.decode.imm % 4 != 0 {
+    if raw & 0x7f == 0x67 && terminal.decode.imm % 4 != 0 {
         let input = Rv64imLoweringInput::new(
             0,
             terminal.decode.rd,
