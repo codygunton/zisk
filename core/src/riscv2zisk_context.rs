@@ -106,9 +106,6 @@ impl Riscv2ZiskContext<'_> {
 
     #[cfg(feature = "aeneas_extract")]
     fn insert_inst(&mut self, _rom_address: u64, zib: ZiskInstBuilder) {
-        if self.extract_first_inst.is_none() {
-            self.extract_first_inst = Some(zib.clone());
-        }
         self.extract_inst = Some(zib);
     }
 
@@ -1390,6 +1387,10 @@ impl Riscv2ZiskContext<'_> {
                 zib.j(1, 1);
                 zib.build();
                 self.insert_inst(rom_address, zib);
+                #[cfg(feature = "aeneas_extract")]
+                {
+                    self.extract_first_inst = self.extract_inst.clone();
+                }
                 rom_address += 1;
             }
             {

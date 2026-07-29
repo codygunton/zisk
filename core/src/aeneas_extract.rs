@@ -391,9 +391,12 @@ pub fn extract_transpile_rv64im_rows_raw(raw: u32) -> Rv64imTranspileRowsExtract
                 output_precompile_reg: None,
             };
             ctx.lower_rv64im_single_row_input(&input, opcode, false);
-            let first_row = ZiskInstExtract::from_inst(&ctx.extract_first_inst.unwrap().i);
             let last_row = ZiskInstExtract::from_inst(&ctx.extract_inst.unwrap().i);
-            let row_count = if first_row.paddr == last_row.paddr { 1 } else { 2 };
+            let row_count = if ctx.extract_first_inst.is_some() { 2 } else { 1 };
+            let first_row = match ctx.extract_first_inst {
+                Some(first) => ZiskInstExtract::from_inst(&first.i),
+                None => last_row,
+            };
             Rv64imTranspileRowsExtract { accepted: true, decode, row_count, first_row, last_row }
         }
         None => Rv64imTranspileRowsExtract {
