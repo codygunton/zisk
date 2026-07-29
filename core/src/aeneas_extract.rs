@@ -621,6 +621,13 @@ mod tests {
     }
 
     #[test]
+    fn rejected_rows_keep_rejection_authoritative() {
+        let rejected = extract_transpile_rv64im_rows_raw(0x1000000F);
+        assert!(!rejected.accepted);
+        assert_eq!(rejected.row_count, 1);
+    }
+
+    #[test]
     fn extraction_starts_match_production_convert_for_single_row_opcodes() {
         let cases: &[(&str, ExtractStart)] = &[
             ("lui", extract_lui_from_inst),
