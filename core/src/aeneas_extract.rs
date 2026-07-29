@@ -375,37 +375,48 @@ pub fn extract_transpile_rv64im_raw(raw: u32) -> Rv64imTranspileExtract {
 }
 
 pub fn extract_transpile_rv64im_rows_raw(raw: u32) -> Rv64imTranspileRowsExtract {
-    let decoded = decode_32_core(raw);
-    let decode = decode_extract_from_decoded(decoded);
-    match lowering_opcode(decoded.opcode) {
-        Some(opcode) => {
-            let input =
-                Rv64imLoweringInput::new(0, decoded.rd, decoded.rs1, decoded.rs2, decoded.imm);
-            let mut ctx = Riscv2ZiskContext {
-                extract_inst: None,
-                extract_first_inst: None,
-                extract_marker: PhantomData,
-                input_precompile: None,
-                output_precompile: None,
-                input_precompile_reg: None,
-                output_precompile_reg: None,
-            };
-            ctx.lower_rv64im_single_row_input(&input, opcode, false);
-            let last_row = ZiskInstExtract::from_inst(&ctx.extract_inst.unwrap().i);
-            let row_count = if ctx.extract_first_inst.is_some() { 2 } else { 1 };
-            let first_row = match ctx.extract_first_inst {
-                Some(first) => first,
-                None => last_row,
-            };
-            Rv64imTranspileRowsExtract { accepted: true, decode, row_count, first_row, last_row }
-        }
-        None => Rv64imTranspileRowsExtract {
+    let terminal = extract_transpile_rv64im_raw(raw);
+    if !terminal.accepted {
+        return Rv64imTranspileRowsExtract {
             accepted: false,
-            decode,
+            decode: terminal.decode,
             row_count: 0,
             first_row: ZiskInstExtract::default(),
             last_row: ZiskInstExtract::default(),
-        },
+        };
+    }
+    if terminal.decode.opcode_id == opcode_id(RiscvOpcode::Jalr) && terminal.decode.imm % 4 != 0 {
+        let input = Rv64imLoweringInput::new(
+            0,
+            terminal.decode.rd,
+            terminal.decode.rs1,
+            terminal.decode.rs2,
+            terminal.decode.imm,
+        );
+        let mut ctx = Riscv2ZiskContext {
+            extract_inst: None,
+            extract_first_inst: None,
+            extract_marker: PhantomData,
+            input_precompile: None,
+            output_precompile: None,
+            input_precompile_reg: None,
+            output_precompile_reg: None,
+        };
+        ctx.lower_rv64im_single_row_input(&input, Rv64imSingleRowOpcode::Jalr, false);
+        return Rv64imTranspileRowsExtract {
+            accepted: true,
+            decode: terminal.decode,
+            row_count: 2,
+            first_row: ctx.extract_first_inst.unwrap(),
+            last_row: terminal.row,
+        };
+    }
+    Rv64imTranspileRowsExtract {
+        accepted: true,
+        decode: terminal.decode,
+        row_count: 1,
+        first_row: terminal.row,
+        last_row: terminal.row,
     }
 }
 
