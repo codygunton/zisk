@@ -1390,7 +1390,31 @@ impl Riscv2ZiskContext<'_> {
                 zib.build();
                 #[cfg(feature = "aeneas_extract")]
                 {
-                    self.extract_first_inst = Some(ZiskInstExtract::from_inst(&zib.i));
+                    self.extract_first_inst = Some(ZiskInstExtract {
+                        paddr: zib.i.paddr,
+                        store_pc: zib.i.store_pc,
+                        store_use_sp: zib.i.store_use_sp,
+                        store: zib.i.store,
+                        store_offset: zib.i.store_offset,
+                        set_pc: zib.i.set_pc,
+                        is_precompiled: zib.i.is_precompiled,
+                        ind_width: zib.i.ind_width,
+                        end: zib.i.end,
+                        a_src: zib.i.a_src,
+                        a_use_sp_imm1: zib.i.a_use_sp_imm1,
+                        a_offset_imm0: zib.i.a_offset_imm0,
+                        b_src: zib.i.b_src,
+                        b_use_sp_imm1: zib.i.b_use_sp_imm1,
+                        b_offset_imm0: zib.i.b_offset_imm0,
+                        jmp_offset1: zib.i.jmp_offset1,
+                        jmp_offset2: zib.i.jmp_offset2,
+                        is_external_op: zib.i.is_external_op,
+                        op: zib.i.op,
+                        op_type_id: zib.i.op_type as u32,
+                        m32: zib.i.m32,
+                        input_size: zib.i.input_size,
+                        sorted_pc_list_index: zib.i.sorted_pc_list_index,
+                    });
                 }
                 self.insert_inst(rom_address, zib);
                 rom_address += 1;
