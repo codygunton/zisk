@@ -376,16 +376,7 @@ pub fn extract_transpile_rv64im_raw(raw: u32) -> Rv64imTranspileExtract {
 
 pub fn extract_transpile_rv64im_rows_raw(raw: u32) -> Rv64imTranspileRowsExtract {
     let terminal = extract_transpile_rv64im_raw(raw);
-    if !terminal.accepted {
-        return Rv64imTranspileRowsExtract {
-            accepted: false,
-            decode: terminal.decode,
-            row_count: 0,
-            first_row: ZiskInstExtract::default(),
-            last_row: ZiskInstExtract::default(),
-        };
-    }
-    if raw & 0x7f == 0x67 && terminal.decode.imm % 4 != 0 {
+    if raw & 0x7f == 0x67 && terminal.accepted && terminal.decode.imm % 4 != 0 {
         let input = Rv64imLoweringInput::new(
             0,
             terminal.decode.rd,
@@ -412,7 +403,7 @@ pub fn extract_transpile_rv64im_rows_raw(raw: u32) -> Rv64imTranspileRowsExtract
         };
     }
     Rv64imTranspileRowsExtract {
-        accepted: true,
+        accepted: terminal.accepted,
         decode: terminal.decode,
         row_count: 1,
         first_row: terminal.row,
