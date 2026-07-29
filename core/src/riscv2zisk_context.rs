@@ -26,6 +26,8 @@ use crate::{
     MAX_ZISK_OS_ROM_ADDR, MTVEC, OUTPUT_ADDR, REG_X0, ROM_EXIT,
 };
 
+#[cfg(feature = "aeneas_extract")]
+use crate::aeneas_extract::ZiskInstExtract;
 #[cfg(not(feature = "aeneas_extract"))]
 use std::collections::BTreeMap;
 #[cfg(feature = "aeneas_extract")]
@@ -86,7 +88,7 @@ pub struct Riscv2ZiskContext<'a> {
     #[cfg(feature = "aeneas_extract")]
     pub extract_inst: Option<ZiskInstBuilder>,
     #[cfg(feature = "aeneas_extract")]
-    pub extract_first_inst: Option<ZiskInstBuilder>,
+    pub extract_first_inst: Option<ZiskInstExtract>,
     #[cfg(feature = "aeneas_extract")]
     pub extract_marker: PhantomData<&'a ()>,
     // to store csr-port used on CSR instrucction for next instruction
@@ -1386,11 +1388,11 @@ impl Riscv2ZiskContext<'_> {
                 }
                 zib.j(1, 1);
                 zib.build();
-                self.insert_inst(rom_address, zib);
                 #[cfg(feature = "aeneas_extract")]
                 {
-                    self.extract_first_inst = self.extract_inst.clone();
+                    self.extract_first_inst = Some(ZiskInstExtract::from_inst(&zib.i));
                 }
+                self.insert_inst(rom_address, zib);
                 rom_address += 1;
             }
             {
