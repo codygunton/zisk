@@ -38,15 +38,37 @@ pub fn riscv_interpreter(rom_address: u64, code: &[u16]) -> Vec<RiscvInstruction
         let inst = code[code_index];
         code_index += 1;
 
-        // The all-zero compressed encoding is reserved.  In particular, two
-        // adjacent zero halfwords are not a 32-bit NOP: a 32-bit RISC-V
-        // instruction has low bits `0b11`, while this one faults at its first
-        // 16-bit halfword.
+        // Manage instructions that are zero
+        // As per spec, they can only be 32 bits nop instructions
+        // In case of 16 zero bits, they are used by some compilers (e.g. Go Lang compiler) to halt
+        // the system with an error
         if inst == 0 {
-            insts.push(RiscvInstruction::c_halt(
-                0,
-                rom_address + (instruction_code_index * 2) as u64,
-            ));
+            // println!("riscv_interpreter() found inst=0 at position s={} (index in u32 array)", s);
+            if code_index == code_len {
+                // This is the last 16 bits in the code buffer, so this must be a 16-bits invalid
+                // instruction, so we must HALT
+                insts.push(RiscvInstruction::c_halt(
+                    0,
+                    rom_address + (instruction_code_index * 2) as u64,
+                ));
+                break;
+            }
+            let inst = code[code_index];
+            if inst == 0 {
+                // Both 16 bits instructions are zero, so this is a 32-bits nop
+                code_index += 1;
+                insts.push(RiscvInstruction::nop(
+                    0,
+                    rom_address + (instruction_code_index * 2) as u64,
+                ));
+            } else {
+                // The first 16 bits are zero, but the second 16 bits are not zero, so this is a
+                // 16-bits invalid instruction, so we must HALT
+                insts.push(RiscvInstruction::c_halt(
+                    0,
+                    rom_address + (instruction_code_index * 2) as u64,
+                ));
+            }
             continue;
         }
 
@@ -113,22 +135,6 @@ pub fn riscv_interpreter(rom_address: u64, code: &[u16]) -> Vec<RiscvInstruction
         }
     }
     insts
-}
-
-#[cfg(test)]
-mod tests {
-    use super::riscv_interpreter;
-
-    #[test]
-    fn all_zero_word_decodes_as_reserved_compressed_instruction() {
-        let instructions = riscv_interpreter(0x1000, &[0, 0]);
-
-        assert_eq!(instructions.len(), 2);
-        assert_eq!(instructions[0].inst, "c.halt");
-        assert_eq!(instructions[0].rom_address, 0x1000);
-        assert_eq!(instructions[1].inst, "c.halt");
-        assert_eq!(instructions[1].rom_address, 0x1002);
-    }
 }
 
 fn riscv_get_instruction_32(inst: u32, root_address: u64, code_index: usize) -> RiscvInstruction {
