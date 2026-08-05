@@ -57,16 +57,16 @@ use std::error::Error;
 // #[cfg(feature = "sp")]
 // use crate::SRC_SP;
 
-const CAUSE_INSTRUCTION_ACCESS_FAULT: u64 = 1;
+const CAUSE_INSTRUCTION_ADDRESS_MISALIGNED: u64 = 0;
 
-fn instruction_access_fault_instruction(paddr: u64) -> ZiskInst {
+fn instruction_address_misaligned_instruction(paddr: u64) -> ZiskInst {
     let mut zib = ZiskInstBuilder::new(paddr);
     zib.src_a("imm", 0, false);
-    zib.src_b("imm", CAUSE_INSTRUCTION_ACCESS_FAULT, false);
+    zib.src_b("imm", CAUSE_INSTRUCTION_ADDRESS_MISALIGNED, false);
     zib.op("halt").unwrap();
     zib.j(0, 0);
     zib.end();
-    zib.verbose("instruction access fault");
+    zib.verbose("instruction address misaligned");
     zib.i
 }
 
@@ -263,39 +263,38 @@ impl ZiskRom {
             if max_bios_address > 0 { (max_bios_address - ROM_ENTRY) / 4 + 1 } else { 0 };
         let num_program_instructions =
             if max_program_address > 0 { (max_program_address - ROM_ADDR) / 4 + 1 } else { 0 };
-        let num_program_na_instructions =
-            if max_program_na_address > 0 { (max_program_na_address - ROM_ADDR) + 1 } else { 0 };
+        let max_program_lookup_address = max_program_address.max(max_program_na_address);
+        let num_program_na_instructions = if max_program_lookup_address > 0 {
+            (max_program_lookup_address - ROM_ADDR) + 1
+        } else {
+            0
+        };
         let num_float_instructions = if max_float_address > 0 {
             (max_float_address - FLOAT_LIB_ROM_ADDR) / 4 + 1
         } else {
             0
         };
-        let num_float_na_instructions = if max_float_na_address > 0 {
-            (max_float_na_address - FLOAT_LIB_ROM_ADDR) + 1
+        let max_float_lookup_address = max_float_address.max(max_float_na_address);
+        let num_float_na_instructions = if max_float_lookup_address > 0 {
+            (max_float_lookup_address - FLOAT_LIB_ROM_ADDR) + 1
         } else {
             0
         };
 
         // Initialize in parallel to increase performance
-        self.rom_bios_instructions = (0..num_bios_instructions)
-            .into_par_iter()
-            .map(|index| instruction_access_fault_instruction(ROM_ENTRY + index * 4))
-            .collect();
-        self.rom_program_instructions = (0..num_program_instructions)
-            .into_par_iter()
-            .map(|index| instruction_access_fault_instruction(ROM_ADDR + index * 4))
-            .collect();
+        self.rom_bios_instructions =
+            (0..num_bios_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
+        self.rom_program_instructions =
+            (0..num_program_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
         self.rom_program_na_instructions = (0..num_program_na_instructions)
             .into_par_iter()
-            .map(|index| instruction_access_fault_instruction(ROM_ADDR + index))
+            .map(|index| instruction_address_misaligned_instruction(ROM_ADDR + index))
             .collect();
-        self.rom_float_instructions = (0..num_float_instructions)
-            .into_par_iter()
-            .map(|index| instruction_access_fault_instruction(FLOAT_LIB_ROM_ADDR + index * 4))
-            .collect();
+        self.rom_float_instructions =
+            (0..num_float_instructions).into_par_iter().map(|_| ZiskInst::default()).collect();
         self.rom_float_na_instructions = (0..num_float_na_instructions)
             .into_par_iter()
-            .map(|index| instruction_access_fault_instruction(FLOAT_LIB_ROM_ADDR + index))
+            .map(|index| instruction_address_misaligned_instruction(FLOAT_LIB_ROM_ADDR + index))
             .collect();
 
         // Sort pc list
@@ -648,7 +647,7 @@ mod tests {
         // Check arrays
         assert_eq!(rom.rom_bios_instructions.len(), 0);
         assert_eq!(rom.rom_program_instructions.len(), 4); // Includes the gap at ROM_ADDR + 8
-        assert_eq!(rom.rom_program_na_instructions.len(), 0);
+        assert_eq!(rom.rom_program_na_instructions.len(), 13);
         assert_eq!(rom.rom_float_instructions.len(), 0);
         assert_eq!(rom.rom_float_na_instructions.len(), 0);
 
@@ -661,19 +660,19 @@ mod tests {
     }
 
     #[test]
-    fn test_optimize_main_rom_gap_is_instruction_access_fault() {
+    fn test_optimize_non_aligned_lookup_is_instruction_address_misaligned() {
         let mut rom = ZiskRom { next_init_inst_addr: ROM_ENTRY, ..Default::default() };
 
         rom.insts.insert(ROM_ADDR, create_test_inst_builder(ROM_ADDR, 10));
-        rom.insts.insert(ROM_ADDR + 8, create_test_inst_builder(ROM_ADDR + 8, 12));
+        rom.insts.insert(ROM_ADDR + 4, create_test_inst_builder(ROM_ADDR + 4, 12));
 
         assert!(rom.optimize_instruction_lookup().is_ok());
 
-        let gap = &rom.rom_program_instructions[1];
-        assert_eq!(gap.paddr, ROM_ADDR + 4);
-        assert_eq!(gap.op_str, "halt");
-        assert_eq!(gap.b_offset_imm0, CAUSE_INSTRUCTION_ACCESS_FAULT);
-        assert!(gap.end);
+        let misaligned = &rom.rom_program_na_instructions[2];
+        assert_eq!(misaligned.paddr, ROM_ADDR + 2);
+        assert_eq!(misaligned.op_str, "halt");
+        assert_eq!(misaligned.b_offset_imm0, CAUSE_INSTRUCTION_ADDRESS_MISALIGNED);
+        assert!(misaligned.end);
     }
 
     #[test]
