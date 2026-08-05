@@ -885,7 +885,8 @@ impl Riscv2ZiskContext<'_> {
         assert!(inst_size == 2 || inst_size == 4);
         let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
         zib.src_a("imm", 0, false);
-        zib.src_b("imm", cause, false);
+        // Zero means "no exception" in InstContext, so store cause + 1 internally.
+        zib.src_b("imm", cause + 1, false);
         zib.op("halt").unwrap();
         zib.j(inst_size as i64, inst_size as i64);
         zib.end();

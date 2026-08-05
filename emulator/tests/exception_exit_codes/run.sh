@@ -10,12 +10,12 @@ trap 'rm -rf "$build_dir"' EXIT
 
 case ${1:-patched} in
   patched)
-    cases=(illegal:34 ebreak:35 misaligned_branch:32 misaligned_jal:32 misaligned_jalr:32 clean_exit:0)
+    cases=(illegal:34 ebreak:35 misaligned_branch:32 misaligned_jal:32 misaligned_jalr:32 load_fault:37 store_fault:39 clean_exit:0)
     ;;
   baseline)
     # The pre-change executable silently succeeds on transpile-time halts and does not enforce
     # IALIGN=32 for a no-C program.
-    cases=(illegal:0 ebreak:0 misaligned_branch:0 misaligned_jal:0 misaligned_jalr:0 clean_exit:0)
+    cases=(illegal:0 ebreak:0 misaligned_branch:0 misaligned_jal:0 misaligned_jalr:0 load_fault:101 store_fault:101 clean_exit:0)
     ;;
   *)
     echo "usage: $0 [baseline|patched]" >&2

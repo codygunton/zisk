@@ -62,7 +62,8 @@ const CAUSE_INSTRUCTION_ADDRESS_MISALIGNED: u64 = 0;
 fn instruction_address_misaligned_instruction(paddr: u64) -> ZiskInst {
     let mut zib = ZiskInstBuilder::new(paddr);
     zib.src_a("imm", 0, false);
-    zib.src_b("imm", CAUSE_INSTRUCTION_ADDRESS_MISALIGNED, false);
+    // Zero means "no exception" in InstContext, so store cause + 1 internally.
+    zib.src_b("imm", CAUSE_INSTRUCTION_ADDRESS_MISALIGNED + 1, false);
     zib.op("halt").unwrap();
     zib.j(0, 0);
     zib.end();
@@ -671,7 +672,7 @@ mod tests {
         let misaligned = &rom.rom_program_na_instructions[2];
         assert_eq!(misaligned.paddr, ROM_ADDR + 2);
         assert_eq!(misaligned.op_str, "halt");
-        assert_eq!(misaligned.b_offset_imm0, CAUSE_INSTRUCTION_ADDRESS_MISALIGNED);
+        assert_eq!(misaligned.b_offset_imm0, CAUSE_INSTRUCTION_ADDRESS_MISALIGNED + 1);
         assert!(misaligned.end);
     }
 

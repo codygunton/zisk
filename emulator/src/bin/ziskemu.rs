@@ -1,9 +1,11 @@
 use clap::Parser;
-use std::{fmt::Write, process};
+use std::{fmt::Write, panic, process};
 use zisk_common::EmuTrace;
 use ziskemu::{EmuOptions, Emulator, ZiskEmulator, ZiskEmulatorErr};
 
 fn main() {
+    install_access_fault_panic_hook();
+
     // Create a emulator options instance based on arguments or default values
     let options: EmuOptions = EmuOptions::parse();
 
@@ -36,4 +38,28 @@ fn main() {
             process::exit(1);
         }
     }
+}
+
+fn install_access_fault_panic_hook() {
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        let message = panic_info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| panic_info.payload().downcast_ref::<String>().map(String::as_str));
+
+        let exit_code = match message {
+            Some(message) if message.contains("Mem::read()") => Some(37),
+            Some(message) if message.contains("Mem::write_silent()") => Some(39),
+            _ => None,
+        };
+
+        if let Some(exit_code) = exit_code {
+            eprintln!("Emulation stopped with RISC-V exception exit code {exit_code}");
+            process::exit(exit_code);
+        }
+
+        default_hook(panic_info);
+    }));
 }

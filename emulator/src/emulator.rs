@@ -132,7 +132,7 @@ impl ZiskEmulator {
             return Err(ZiskEmulatorErr::EmulationNoCompleted);
         }
         if emu.error() != 0 {
-            return Err(ZiskEmulatorErr::Exception(emu.error()));
+            return Err(ZiskEmulatorErr::Exception(emu.error() - 1));
         }
 
         // Store the duration of the emulation process as a difference vs. the start time
