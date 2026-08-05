@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::{fmt::Write, process};
 use zisk_common::EmuTrace;
-use ziskemu::{EmuOptions, Emulator, ZiskEmulator};
+use ziskemu::{EmuOptions, Emulator, ZiskEmulator, ZiskEmulatorErr};
 
 fn main() {
     // Create a emulator options instance based on arguments or default values
@@ -27,8 +27,12 @@ fn main() {
             });
             // print!("Result: 0x{}", hex_string);
         }
-        Err(e) => {
-            eprintln!("Error during emulation: {e:?}");
+        Err(ZiskEmulatorErr::Exception(cause)) => {
+            eprintln!("Emulation stopped with RISC-V exception cause {cause}");
+            process::exit(32 + cause as i32);
+        }
+        Err(error) => {
+            eprintln!("Error during emulation: {error:?}");
             process::exit(1);
         }
     }

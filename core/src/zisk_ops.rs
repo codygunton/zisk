@@ -1940,7 +1940,7 @@ pub fn op_halt(a: u64, b: u64) -> (u64, bool) {
 /// InstContext-based wrapper over op_halt()
 #[inline(always)]
 pub fn opc_halt(ctx: &mut InstContext) {
-    ctx.error = true;
+    ctx.error = ctx.b as u32;
     ctx.c = 0;
     ctx.flag = false;
 }

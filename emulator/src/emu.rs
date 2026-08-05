@@ -1500,7 +1500,7 @@ impl<'a> Emu<'a> {
         }
 
         // Detect and report error
-        if self.ctx.inst_ctx.error {
+        if self.ctx.inst_ctx.error != 0 {
             eprintln!(
                 "Emu::run_fast() finished with error at step={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
@@ -1836,7 +1836,7 @@ impl<'a> Emu<'a> {
         }
 
         // Detect and report error
-        if self.ctx.inst_ctx.error {
+        if self.ctx.inst_ctx.error != 0 {
             eprintln!(
                 "Emu::run() finished with error at step={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
@@ -1935,7 +1935,7 @@ impl<'a> Emu<'a> {
         }
 
         // Detect and report error
-        if self.ctx.inst_ctx.error {
+        if self.ctx.inst_ctx.error != 0 {
             eprintln!(
                 "Emu::par_run() finished with error at step={} pc=0x{:x}",
                 self.ctx.inst_ctx.step, self.ctx.inst_ctx.pc
@@ -2720,6 +2720,11 @@ impl<'a> Emu<'a> {
     /// Returns if the emulation ended
     pub fn terminated(&self) -> bool {
         self.ctx.inst_ctx.end
+    }
+
+    /// Returns the RISC-V exception cause that stopped emulation, if any.
+    pub fn error(&self) -> u32 {
+        self.ctx.inst_ctx.error
     }
 
     /// Returns the number of executed steps

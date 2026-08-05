@@ -65,6 +65,8 @@ const CSR_FCALL_PARAM_ADDR_END: u16 = 0x8FF;
 const CSR_FCALL_PARAM_OFFSET_TO_WORDS: [u64; 16] =
     [1, 2, 4, 8, 12, 16, 20, 24, 28, 32, 48, 64, 80, 96, 128, 256];
 
+const CAUSE_ILLEGAL_INSTRUCTION: u64 = 2;
+const CAUSE_BREAKPOINT: u64 = 3;
 const CAUSE_EXIT: u64 = 93;
 const M64: u64 = 0xFFFFFFFFFFFFFFFF;
 #[cfg(feature = "float")]
@@ -244,7 +246,7 @@ impl Riscv2ZiskContext<'_> {
 
             // I.6 Privileged & System Instructions (Part of I Base)
             "ecall" => self.ecall(riscv_instruction),
-            "ebreak" => self.nop(riscv_instruction, 4),
+            "ebreak" => self.halt_with_error(riscv_instruction, 4, CAUSE_BREAKPOINT),
             "csrrw" => self.csrrw(riscv_instruction),
             "csrrs" => self.csrrs(riscv_instruction, next_instructions),
             "csrrc" => self.csrrc(riscv_instruction),
@@ -362,7 +364,7 @@ impl Riscv2ZiskContext<'_> {
             "c.sd" | "c.sdsp" => self.store_op(riscv_instruction, "copyb", 8, 2),
 
             // C.I.6.Privileged & System Instructions
-            "c.ebreak" => self.nop(riscv_instruction, 2),
+            "c.ebreak" => self.halt_with_error(riscv_instruction, 2, CAUSE_BREAKPOINT),
 
             // C.D: Double-Precision Floating-Point:
             #[cfg(feature = "float")]
@@ -376,7 +378,7 @@ impl Riscv2ZiskContext<'_> {
 
             // C. Other
             "c.nop" => self.nop(riscv_instruction, 2),
-            "c.reserved" => self.halt_with_error(riscv_instruction, 2),
+            "c.reserved" => self.halt_with_error(riscv_instruction, 2, CAUSE_ILLEGAL_INSTRUCTION),
 
             // F: Single-Precision Floating-Point
             /////////////////////////////////////
@@ -513,8 +515,8 @@ impl Riscv2ZiskContext<'_> {
 
             // This instruction ends the emulation with an error and its opcode cannot be proven,
             // i.e. the proof generation would fail
-            "c.halt" => self.halt_with_error(riscv_instruction, 2),
-            "reserved" => self.halt_with_error(riscv_instruction, 4),
+            "c.halt" => self.halt_with_error(riscv_instruction, 2, CAUSE_ILLEGAL_INSTRUCTION),
+            "reserved" => self.halt_with_error(riscv_instruction, 4, CAUSE_ILLEGAL_INSTRUCTION),
 
             _ => {
                 panic!(
@@ -878,12 +880,13 @@ impl Riscv2ZiskContext<'_> {
         zib.build(self.rom);
     }
 
-    /// Creates a Zisk operation that simply sets the error to true and halts the execution
-    pub fn halt_with_error(&mut self, i: &RiscvInstruction, inst_size: u64) {
+    /// Creates a Zisk operation that records an exception cause and halts the execution.
+    pub fn halt_with_error(&mut self, i: &RiscvInstruction, inst_size: u64, cause: u64) {
         assert!(inst_size == 2 || inst_size == 4);
         let mut zib = ZiskInstBuilder::new_from_riscv(i.rom_address, i.inst.clone());
         zib.src_a("imm", 0, false);
-        zib.src_b("imm", 0, false);
+        // Zero means "no exception" in InstContext, so store cause + 1 internally.
+        zib.src_b("imm", cause + 1, false);
         zib.op("halt").unwrap();
         zib.j(inst_size as i64, inst_size as i64);
         zib.end();
