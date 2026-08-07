@@ -35,7 +35,9 @@
 //! | STORE_MEM  | c        | Value is stored in memory at a constant address             |
 //! | STORE_IND  | c        | value is stored in memory at an indirect address a + offset |
 
-use crate::{source_to_str, store_to_str, InstContext};
+#[cfg(not(feature = "aeneas_extract"))]
+use crate::InstContext;
+use crate::{source_to_str, store_to_str};
 
 /// a or b registers source is the current value of the c register
 pub const SRC_C: u64 = 0;
@@ -141,13 +143,17 @@ pub struct ZiskInst {
     pub jmp_offset2: i64,
     pub is_external_op: bool,
     pub op: u8,
+    #[cfg(not(feature = "aeneas_extract"))]
     pub func: fn(&mut InstContext) -> (),
+    #[cfg(not(feature = "aeneas_extract"))]
     pub op_str: &'static str,
     pub op_type: ZiskOperationType,
+    #[cfg(not(feature = "aeneas_extract"))]
     pub verbose: String,
     pub m32: bool,
     pub input_size: u64,
     pub sorted_pc_list_index: usize,
+    #[cfg(not(feature = "aeneas_extract"))]
     pub riscv_inst: Option<String>,
 }
 
@@ -179,13 +185,17 @@ impl Default for ZiskInst {
             jmp_offset2: 0,
             is_external_op: false,
             op: 0,
+            #[cfg(not(feature = "aeneas_extract"))]
             func: |_| (),
+            #[cfg(not(feature = "aeneas_extract"))]
             op_str: "",
             op_type: ZiskOperationType::None,
+            #[cfg(not(feature = "aeneas_extract"))]
             verbose: String::new(),
             m32: false,
             input_size: 0,
             sorted_pc_list_index: 0,
+            #[cfg(not(feature = "aeneas_extract"))]
             riscv_inst: None,
         }
     }
@@ -199,8 +209,11 @@ impl ZiskInst {
         if self.paddr != 0 {
             s += &format!(" paddr=0x{:x}", self.paddr);
         }
-        if !self.verbose.is_empty() {
-            s += &format!(" verbose={}", self.verbose);
+        #[cfg(not(feature = "aeneas_extract"))]
+        {
+            if !self.verbose.is_empty() {
+                s += &format!(" verbose={}", self.verbose);
+            }
         }
         s += &format!(" a_src={}={}", self.a_src, source_to_str(self.a_src));
         if self.a_use_sp_imm1 != 0 {
@@ -219,8 +232,13 @@ impl ZiskInst {
         if self.ind_width != 0 {
             s += &format!(" ind_width={}", self.ind_width);
         }
+        #[cfg(not(feature = "aeneas_extract"))]
         {
             s += &format!(" op={}={}", self.op, self.op_str);
+        }
+        #[cfg(feature = "aeneas_extract")]
+        {
+            s += &format!(" op={}", self.op);
         }
         if self.store != 0 {
             s += &format!(" store={}={}", self.store, store_to_str(self.store));

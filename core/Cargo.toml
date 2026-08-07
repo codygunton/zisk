@@ -36,6 +36,7 @@ lib-float = { workspace = true }
 
 [features]
 default = []
+aeneas_extract = []
 debug_dma = []
 log_dma_ops = []
 # sp = []

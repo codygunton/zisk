@@ -276,7 +276,33 @@ macro_rules! define_ops {
                 }
             }
 
-			/// Returns the input data size of the operation
+            pub const fn is_m32(&self) -> bool {
+                matches!(
+                    self,
+                    Self::MinuW
+                        | Self::MinW
+                        | Self::MaxuW
+                        | Self::MaxW
+                        | Self::LtuW
+                        | Self::LtW
+                        | Self::EqW
+                        | Self::AddW
+                        | Self::SubW
+                        | Self::LeuW
+                        | Self::LeW
+                        | Self::SllW
+                        | Self::SrlW
+                        | Self::SraW
+                        | Self::SignExtendW
+                        | Self::MulW
+                        | Self::DivuW
+                        | Self::RemuW
+                        | Self::DivW
+                        | Self::RemW
+                )
+            }
+
+            /// Returns the input data size of the operation
             pub const fn output_size(&self) -> u64 {
                 match self {
                     $(

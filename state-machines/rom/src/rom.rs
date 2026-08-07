@@ -324,3 +324,100 @@ impl<F: PrimeField64> ComponentBuilder<F> for RomSM {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fields::Goldilocks;
+    use zisk_core::{SRC_IND, STORE_REG};
+
+    fn signed_u64(value: u64) -> Goldilocks {
+        let value = value as i64;
+        if value >= 0 {
+            Goldilocks::from_u64(value as u64)
+        } else {
+            -Goldilocks::from_u64((-value) as u64)
+        }
+    }
+
+    fn signed_i64(value: i64) -> Goldilocks {
+        if value >= 0 {
+            Goldilocks::from_u64(value as u64)
+        } else {
+            -Goldilocks::from_u64((-value) as u64)
+        }
+    }
+
+    #[test]
+    fn compute_trace_rom_matches_transpiled_rows() {
+        let elf = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../lib-float/c/lib/ziskfloat.elf"
+        ));
+        let rom = Riscv2zisk::new(elf).run().expect("failed to transpile test ELF");
+        let mut trace = RomRomTrace::<Goldilocks>::new_zeroes();
+
+        RomSM::compute_trace_rom(&rom, &mut trace);
+
+        let mut found_negative_ld = false;
+        for (i, (_, builder)) in rom.insts.iter().enumerate() {
+            let inst = &builder.i;
+            let row = &trace.buffer[i];
+            let expected_op = if inst.op == ZiskOp::Fcall.code()
+                || inst.op == ZiskOp::FcallGet.code()
+                || inst.op == ZiskOp::FcallParam.code()
+            {
+                ZiskOp::CopyB.code()
+            } else {
+                inst.op
+            };
+
+            assert_eq!(row.line, Goldilocks::from_u64(inst.paddr), "row {i}: line");
+            assert_eq!(row.a_offset_imm0, signed_u64(inst.a_offset_imm0), "row {i}: a_offset_imm0");
+            assert_eq!(
+                row.a_imm1,
+                Goldilocks::from_u64(if inst.a_src == SRC_IMM { inst.a_use_sp_imm1 } else { 0 }),
+                "row {i}: a_imm1"
+            );
+            assert_eq!(row.b_offset_imm0, signed_u64(inst.b_offset_imm0), "row {i}: b_offset_imm0");
+            assert_eq!(
+                row.b_imm1,
+                Goldilocks::from_u64(if inst.b_src == SRC_IMM { inst.b_use_sp_imm1 } else { 0 }),
+                "row {i}: b_imm1"
+            );
+            assert_eq!(row.ind_width, Goldilocks::from_u64(inst.ind_width), "row {i}: ind_width");
+            assert_eq!(row.op, Goldilocks::from_u8(expected_op), "row {i}: op");
+            assert_eq!(row.store_offset, signed_i64(inst.store_offset), "row {i}: store_offset");
+            assert_eq!(row.jmp_offset1, signed_i64(inst.jmp_offset1), "row {i}: jmp_offset1");
+            assert_eq!(row.jmp_offset2, signed_i64(inst.jmp_offset2), "row {i}: jmp_offset2");
+            assert_eq!(row.flags, Goldilocks::from_u64(inst.get_flags()), "row {i}: flags");
+
+            let is_negative_ld = inst.op == ZiskOp::CopyB.code()
+                && inst.b_src == SRC_IND
+                && inst.ind_width == 8
+                && (inst.b_offset_imm0 as i64) < 0
+                && inst.store == STORE_REG;
+            if is_negative_ld && !found_negative_ld {
+                eprintln!(
+                    "negative LD row {i} ({:?}): [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}]",
+                    inst.riscv_inst,
+                    row.line.as_canonical_u64(),
+                    row.a_offset_imm0.as_canonical_u64(),
+                    row.a_imm1.as_canonical_u64(),
+                    row.b_offset_imm0.as_canonical_u64(),
+                    row.b_imm1.as_canonical_u64(),
+                    row.ind_width.as_canonical_u64(),
+                    row.op.as_canonical_u64(),
+                    row.store_offset.as_canonical_u64(),
+                    row.jmp_offset1.as_canonical_u64(),
+                    row.jmp_offset2.as_canonical_u64(),
+                    row.flags.as_canonical_u64(),
+                );
+            }
+            found_negative_ld |= is_negative_ld;
+        }
+
+        assert!(found_negative_ld, "test ELF contains no negative-offset LD lowering");
+        assert_eq!(trace.buffer[rom.insts.len()].line, Goldilocks::from_u64(0));
+    }
+}
